@@ -8,6 +8,7 @@ import { startOfToday, endOfToday, formatDateTime, formatTime, relativeFromNow }
 import { getDaySchedule, TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { VITAL_STATUS_STYLE } from '@/lib/vitals';
 import { MEDICAL_EVENT_EMOJI, MEDICAL_EVENT_LABEL } from '@/lib/files';
+import { ALERT_SEVERITY_STYLE, alertLinkHref } from '@/lib/alerts/types';
 
 export default async function PatientDashboard({ params }: { params: { patientId: string } }) {
   const session = await auth();
@@ -87,13 +88,28 @@ export default async function PatientDashboard({ params }: { params: { patientId
       )}
 
       {openAlerts.length > 0 && (
-        <div className="card border-red-300">
-          <p className="font-semibold text-red-900">Alertas activas ({openAlerts.length})</p>
-          <ul className="mt-2 space-y-1">
-            {openAlerts.map((a) => (
-              <li key={a.id} className="text-sm text-red-800">• {a.message}</li>
-            ))}
-          </ul>
+        <div className="space-y-2">
+          <p className="font-semibold">Alertas abiertas ({openAlerts.length})</p>
+          {openAlerts.map((a) => {
+            const style = ALERT_SEVERITY_STYLE[a.severity];
+            const href = alertLinkHref({ patientId: patient.id, type: a.type, sourceId: a.sourceId });
+            return (
+              <Link
+                key={a.id}
+                href={href}
+                className={`card flex items-start gap-3 ${style.bg} ${style.border} hover:shadow-md transition`}
+              >
+                <span className="text-xl shrink-0" aria-hidden>{style.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className={`font-semibold ${style.text}`}>{a.title}</p>
+                  <p className={`text-sm ${style.text} opacity-90`}>{a.message}</p>
+                </div>
+                <span className={`text-xs font-semibold rounded-full px-2 py-1 ${style.bg} ${style.text} shrink-0`}>
+                  {style.label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
 

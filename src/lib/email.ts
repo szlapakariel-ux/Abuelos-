@@ -17,6 +17,6 @@ export async function sendEmail(params: {
     console.warn('[email] RESEND_API_KEY no configurado; email omitido:', params.subject);
     return;
   }
-  const from = process.env.RESEND_FROM || 'Cuidado Mayor <noreply@cuidadomayor.app>';
+  const from = process.env.EMAIL_FROM || process.env.RESEND_FROM || 'Cuidado Mayor <noreply@cuidadomayor.app>';
   await client.emails.send({ from, to: params.to, subject: params.subject, html: params.html });
 }

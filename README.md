@@ -52,6 +52,29 @@ Credenciales del seed (datos ficticios):
 - Admin familia: `admin@demo.local` / `demo1234`
 - Cuidadora:    `cuidadora@demo.local` / `demo1234`
 
+## Jobs programados (cron)
+
+Hay dos endpoints internos protegidos por `CRON_SECRET` que pensamos para Railway Cron:
+
+| Endpoint                              | Frecuencia sugerida | Descripción                                                                 |
+|---------------------------------------|---------------------|-----------------------------------------------------------------------------|
+| `POST /api/jobs/generate-alerts`      | cada 30-60 minutos  | Detecta dosis sin registrar, no tomadas, recetas por vencer, presión fuera de rango, día sin registros, eventos y archivos nuevos. Idempotente: no crea alertas duplicadas. |
+| `POST /api/jobs/send-daily-reports`   | una vez al día      | Manda resumen diario a familiares con `receivesEmailReports = true`. No adjunta archivos; solo links a la app. Si no hay datos, no envía. |
+
+**Llamado**:
+```http
+POST /api/jobs/generate-alerts
+x-cron-secret: <CRON_SECRET>
+```
+
+**Configurar en Railway**:
+1. Ir al servicio web → **Cron** → *New Cron Job*.
+2. Comando: `curl -X POST -H "x-cron-secret: $CRON_SECRET" https://<tu-dominio>/api/jobs/generate-alerts`
+3. Schedule: `*/30 * * * *` (cada 30 minutos).
+4. Repetir para `send-daily-reports` con schedule `0 8 * * *` (8 AM diario, o el horario que prefieras).
+
+Mientras `CRON_SECRET` no esté configurado, los endpoints devuelven `503` y no hacen nada. Mientras `RESEND_API_KEY` no esté configurado, el envío real de emails se omite y queda en log.
+
 ## Deploy en Railway
 
 1. Crear un proyecto en Railway.

@@ -483,6 +483,7 @@ model Alert {
   patientId    String
   patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   type         AlertType
+  title        String
   message      String
   severity     AlertSeverity
   isRead       Boolean       @default(false)
@@ -491,16 +492,24 @@ model Alert {
   resolvedBy   User?         @relation("AlertResolver", fields: [resolvedById], references: [id])
   resolvedAt   DateTime?
   createdAt    DateTime      @default(now())
+
+  // Para evitar duplicar la misma alerta abierta y poder linkear al recurso origen.
+  sourceType   String?
+  sourceId     String?
+
   metadata     Json?
 
   @@index([patientId, isResolved, createdAt])
+  @@index([patientId, type, sourceId, isResolved])
 }
 
 enum AlertType {
   MED_NOT_REGISTERED
   MED_NOT_TAKEN
+  MED_REFUSED
   PRESCRIPTION_EXPIRY
   VITAL_OUT_OF_RANGE
+  VITAL_REVIEW
   DAILY_LOG_MISSING
   NEW_FILE_UPLOADED
   NEW_MEDICAL_EVENT
@@ -509,7 +518,7 @@ enum AlertType {
 enum AlertSeverity {
   INFO
   WARNING
-  URGENT
+  CRITICAL
 }
 
 // ─────────────────────────────────────────
