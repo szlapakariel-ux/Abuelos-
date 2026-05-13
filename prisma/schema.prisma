@@ -396,6 +396,11 @@ model MedicalEvent {
   uploadedById    String
   uploadedBy      User             @relation(fields: [uploadedById], references: [id])
   createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Texto preindexado para futura búsqueda interna por paciente (RAG / fulltext).
+  // Concatena tipo, profesional, motivo, resumen e indicaciones.
+  searchText      String?
 
   files           MedicalFile[]
 
@@ -427,13 +432,17 @@ model MedicalFile {
   patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   name           String
   description    String?
-  storageKey     String        // key/path en R2
+  storageKey     String        // key/path en R2 (privado, acceso por signed URL)
   mimeType       String
   sizeBytes      Int
   category       FileCategory
   uploadedById   String
   uploadedBy     User          @relation("MedicalFileUploader", fields: [uploadedById], references: [id])
   createdAt      DateTime      @default(now())
+
+  // Texto preindexado para futura búsqueda interna por paciente.
+  // Concatena nombre, descripción y categoría.
+  searchText     String?
 
   @@index([patientId])
   @@index([medicalEventId])

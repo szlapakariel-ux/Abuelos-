@@ -46,3 +46,23 @@ export function canManageUsers(globalRole: GlobalRole, patientRole?: PatientRole
   if (globalRole === GlobalRole.AGENCY_ADMIN) return true;
   return patientRole === PatientRole.ADMIN;
 }
+
+/**
+ * Si el usuario puede subir archivos médicos para este paciente.
+ * - Admin del paciente o de la agencia: siempre.
+ * - Otros (cuidadora/familiar): solo si su PatientUser.canUploadFiles está habilitado.
+ */
+export function canUploadFilesFor(access: {
+  patientRole: PatientRole;
+  canUploadFiles: boolean;
+}): boolean {
+  if (access.patientRole === PatientRole.ADMIN) return true;
+  return access.canUploadFiles;
+}
+
+/**
+ * Borrar historial médico: solo administrador del paciente o agency admin.
+ */
+export function canDeleteMedicalRecords(access: { patientRole: PatientRole }): boolean {
+  return access.patientRole === PatientRole.ADMIN;
+}

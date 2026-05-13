@@ -7,6 +7,7 @@ import { calculateAge } from '@/lib/utils';
 import { startOfToday, endOfToday, formatDateTime, formatTime, relativeFromNow } from '@/lib/date';
 import { getDaySchedule, TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { VITAL_STATUS_STYLE } from '@/lib/vitals';
+import { MEDICAL_EVENT_EMOJI, MEDICAL_EVENT_LABEL } from '@/lib/files';
 
 export default async function PatientDashboard({ params }: { params: { patientId: string } }) {
   const session = await auth();
@@ -21,7 +22,7 @@ export default async function PatientDashboard({ params }: { params: { patientId
   const today = startOfToday();
   const end = endOfToday();
 
-  const [meds, lastVital, lastMeal, lastStatus, openAlerts, lastCaregiverLog] = await Promise.all([
+  const [meds, lastVital, lastMeal, lastStatus, openAlerts, lastCaregiverLog, lastEvent, filesCount] = await Promise.all([
     prisma.medication.findMany({
       where: { patientId: params.patientId },
       include: {
@@ -53,6 +54,11 @@ export default async function PatientDashboard({ params }: { params: { patientId
       orderBy: { recordedAt: 'desc' },
       include: { recordedBy: { select: { name: true } } },
     }),
+    prisma.medicalEvent.findFirst({
+      where: { patientId: params.patientId },
+      orderBy: { date: 'desc' },
+    }),
+    prisma.medicalFile.count({ where: { patientId: params.patientId } }),
   ]);
 
   const slots = getDaySchedule(meds, today);
@@ -102,6 +108,11 @@ export default async function PatientDashboard({ params }: { params: { patientId
         <VitalCard vital={lastVital} href={`/pacientes/${patient.id}/presion`} />
         <MealCard meal={lastMeal} href={`/pacientes/${patient.id}/alimentacion`} />
         <StatusTodayCard hasToday={!!lastStatus} href={`/pacientes/${patient.id}/estado`} />
+        <MedicalHistoryCard
+          lastEvent={lastEvent}
+          filesCount={filesCount}
+          href={`/pacientes/${patient.id}/historial`}
+        />
       </section>
 
       {/* Acciones de cuidado */}
@@ -214,6 +225,33 @@ function StatusTodayCard({ hasToday, href }: { hasToday: boolean; href: string }
     <Link href={href} className="card hover:border-brand hover:shadow-md transition">
       <p className="text-sm text-slate-600">Estado general</p>
       <p className="font-semibold mt-2">{hasToday ? 'Registrado hoy' : 'Sin registrar hoy'}</p>
+    </Link>
+  );
+}
+
+function MedicalHistoryCard({
+  lastEvent, filesCount, href,
+}: {
+  lastEvent: { type: keyof typeof MEDICAL_EVENT_LABEL; date: Date } | null;
+  filesCount: number;
+  href: string;
+}) {
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <p className="text-sm text-slate-600">Historial médico</p>
+      {lastEvent ? (
+        <>
+          <p className="font-semibold mt-2">
+            {MEDICAL_EVENT_EMOJI[lastEvent.type]} {MEDICAL_EVENT_LABEL[lastEvent.type]}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(lastEvent.date)}
+            {' · '}{filesCount} archivo{filesCount === 1 ? '' : 's'}
+          </p>
+        </>
+      ) : (
+        <p className="text-slate-500 mt-2">Sin eventos cargados</p>
+      )}
     </Link>
   );
 }
