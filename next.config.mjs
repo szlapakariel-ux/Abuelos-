@@ -1,8 +1,3 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -16,7 +11,8 @@ const nextConfig = {
     ],
   },
   webpack: (config) => {
-    config.resolve.alias['@'] = path.join(__dirname, 'src');
+    const path = require('path');
+    config.resolve.alias['@'] = path.resolve('./src');
     return config;
   },
 };
