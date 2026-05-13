@@ -23,7 +23,7 @@ export default async function PatientsPage() {
               logs: { where: { scheduledFor: { gte: startOfToday(), lte: endOfToday() } } },
             },
           },
-          alerts: { where: { isResolved: false }, take: 1 },
+          alerts: { where: { status: 'OPEN' }, take: 1 },
           users: {
             where: { patientRole: 'CAREGIVER' },
             include: { user: { select: { name: true } } },
@@ -40,7 +40,7 @@ export default async function PatientsPage() {
               logs: { where: { scheduledFor: { gte: startOfToday(), lte: endOfToday() } } },
             },
           },
-          alerts: { where: { isResolved: false }, take: 1 },
+          alerts: { where: { status: 'OPEN' }, take: 1 },
           users: {
             where: { patientRole: 'CAREGIVER' },
             include: { user: { select: { name: true } } },

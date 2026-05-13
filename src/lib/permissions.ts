@@ -66,3 +66,20 @@ export function canUploadFilesFor(access: {
 export function canDeleteMedicalRecords(access: { patientRole: PatientRole }): boolean {
   return access.patientRole === PatientRole.ADMIN;
 }
+
+/**
+ * Gestionar alertas (marcar como resueltas o ignorarlas).
+ * Cuidadora puede ver pero no gestionar; familiar y admin sí.
+ * (Decisión MVP: el flag canEditMedical no se exige; basta con ser familia o admin.)
+ */
+export function canManageAlerts(access: { patientRole: PatientRole }): boolean {
+  return access.patientRole === PatientRole.ADMIN || access.patientRole === PatientRole.FAMILY;
+}
+
+/**
+ * Reabrir una alerta resuelta o ignorada. Más restrictivo que gestionar:
+ * solo admin del paciente o agency admin (vía acceso implícito).
+ */
+export function canReopenAlerts(access: { patientRole: PatientRole }): boolean {
+  return access.patientRole === PatientRole.ADMIN;
+}

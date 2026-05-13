@@ -83,7 +83,7 @@ export async function sendDailyReports(opts: { systemUserId?: string } = {}): Pr
         where: { patientId: patient.id, date: { gte: startOfToday, lte: endOfToday } },
       }),
       prisma.alert.findMany({
-        where: { patientId: patient.id, isResolved: false },
+        where: { patientId: patient.id, status: 'OPEN' },
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),

@@ -29,7 +29,7 @@ async function ensureAlert(input: CreateAlertInput): Promise<boolean> {
     patientId: input.patientId,
     type: input.type,
     sourceId: input.sourceId ?? null,
-    isResolved: false,
+    status: 'OPEN' as const,
   };
   const existing = await prisma.alert.findFirst({ where });
   if (existing) return false;
@@ -51,12 +51,160 @@ async function ensureAlert(input: CreateAlertInput): Promise<boolean> {
 export type GenerateResult = {
   patientsScanned: number;
   alertsCreated: number;
+  alertsAutoResolved: number;
   byType: Partial<Record<AlertType, number>>;
 };
 
+/**
+ * Marca una alerta como auto-resuelta. Se invoca desde autoResolveAlerts.
+ */
+async function autoResolve(alertId: string, reason: string) {
+  await prisma.alert.update({
+    where: { id: alertId },
+    data: {
+      status: 'RESOLVED',
+      isResolved: true,
+      resolvedAt: new Date(),
+      resolutionReason: reason,
+    },
+  });
+  await logAudit({
+    userId: 'system',
+    action: 'alert.resolved.auto',
+    entityType: 'Alert',
+    entityId: alertId,
+    metadata: { reason },
+  });
+}
+
+/**
+ * Recorre alertas OPEN y resuelve automáticamente las que ya no aplican.
+ * Las decisiones por tipo están documentadas inline.
+ */
+export async function autoResolveAlerts(): Promise<number> {
+  const open = await prisma.alert.findMany({
+    where: { status: 'OPEN' },
+    select: {
+      id: true, type: true, patientId: true, sourceId: true, createdAt: true,
+      metadata: true,
+    },
+  });
+
+  let resolved = 0;
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  for (const a of open) {
+    switch (a.type) {
+      case 'MED_NOT_REGISTERED': {
+        // sourceId = `${medId}|${slot}|${day}`
+        if (!a.sourceId) break;
+        const [medId, slot, day] = a.sourceId.split('|');
+        if (!medId || !slot || !day) break;
+        const start = new Date(`${day}T00:00:00.000Z`);
+        const end = new Date(`${day}T23:59:59.999Z`);
+        const log = await prisma.medicationLog.findFirst({
+          where: {
+            medicationId: medId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            scheduleSlot: slot as any,
+            scheduledFor: { gte: start, lte: end },
+          },
+        });
+        if (log) { await autoResolve(a.id, 'Dosis fue registrada'); resolved++; }
+        break;
+      }
+      case 'DAILY_LOG_MISSING': {
+        if (!a.sourceId) break;
+        const start = new Date(`${a.sourceId}T00:00:00.000Z`);
+        const end = new Date(`${a.sourceId}T23:59:59.999Z`);
+        const [m, v, ml, ds] = await Promise.all([
+          prisma.medicationLog.count({ where: { medication: { patientId: a.patientId }, recordedAt: { gte: start, lte: end } } }),
+          prisma.vitalSign.count({ where: { patientId: a.patientId, recordedAt: { gte: start, lte: end } } }),
+          prisma.mealLog.count({ where: { patientId: a.patientId, date: { gte: start, lte: end } } }),
+          prisma.dailyStatus.count({ where: { patientId: a.patientId, date: { gte: start, lte: end } } }),
+        ]);
+        if (m + v + ml + ds > 0) {
+          await autoResolve(a.id, 'Apareció al menos un registro del día');
+          resolved++;
+        }
+        break;
+      }
+      case 'VITAL_REVIEW':
+      case 'VITAL_OUT_OF_RANGE': {
+        // Auto-resolver SOLO si hay una presión NORMAL posterior a la registrada en la alerta.
+        if (!a.sourceId) break;
+        const sourceVital = await prisma.vitalSign.findUnique({ where: { id: a.sourceId } });
+        if (!sourceVital) {
+          await autoResolve(a.id, 'Registro de presión origen ya no existe');
+          resolved++;
+          break;
+        }
+        const laterNormal = await prisma.vitalSign.findFirst({
+          where: { patientId: a.patientId, status: 'NORMAL', recordedAt: { gt: sourceVital.recordedAt } },
+        });
+        if (laterNormal) {
+          await autoResolve(a.id, 'Presión posterior dentro de rango normal');
+          resolved++;
+        }
+        break;
+      }
+      case 'PRESCRIPTION_EXPIRY': {
+        if (!a.sourceId) break;
+        const [medId] = a.sourceId.split('|');
+        if (!medId) break;
+        const med = await prisma.medication.findUnique({ where: { id: medId } });
+        if (!med || med.status !== 'ACTIVE') {
+          await autoResolve(a.id, 'Medicación ya no está activa');
+          resolved++;
+          break;
+        }
+        if (!med.prescriptionExpiry) {
+          await autoResolve(a.id, 'Se quitó la fecha de vencimiento de la receta');
+          resolved++;
+          break;
+        }
+        // Si la fecha quedó renovada (más de 7 días por delante), resolvemos.
+        const in7 = new Date(now + sevenDaysMs);
+        if (med.prescriptionExpiry > in7) {
+          await autoResolve(a.id, 'Receta renovada (vencimiento >7 días)');
+          resolved++;
+        }
+        break;
+      }
+      case 'MED_NOT_TAKEN':
+      case 'MED_REFUSED': {
+        // Si el log origen ya no existe (fue borrado), resolvemos.
+        if (!a.sourceId) break;
+        const log = await prisma.medicationLog.findUnique({ where: { id: a.sourceId } });
+        if (!log) { await autoResolve(a.id, 'Registro de toma origen ya no existe'); resolved++; }
+        break;
+      }
+      case 'NEW_FILE_UPLOADED':
+      case 'NEW_MEDICAL_EVENT': {
+        // Informativas: auto-resolvemos después de 7 días para que no queden en abiertas indefinidamente.
+        if (now - a.createdAt.getTime() > sevenDaysMs) {
+          await autoResolve(a.id, 'Más de 7 días: pasa a info histórica');
+          resolved++;
+        }
+        break;
+      }
+    }
+  }
+  return resolved;
+}
+
 export async function generateAlerts(opts: { systemUserId?: string } = {}): Promise<GenerateResult> {
+  // 1) Auto-resolver primero, para no estar viendo dosis "pendientes" que ya se registraron.
+  const alertsAutoResolved = await autoResolveAlerts();
+
   const patients = await prisma.patient.findMany({ where: { isActive: true } });
-  const result: GenerateResult = { patientsScanned: patients.length, alertsCreated: 0, byType: {} };
+  const result: GenerateResult = {
+    patientsScanned: patients.length,
+    alertsCreated: 0,
+    alertsAutoResolved,
+    byType: {},
+  };
 
   const now = new Date();
   const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);

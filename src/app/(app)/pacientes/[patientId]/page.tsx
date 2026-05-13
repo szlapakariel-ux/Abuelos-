@@ -46,8 +46,12 @@ export default async function PatientDashboard({ params }: { params: { patientId
       orderBy: { date: 'desc' },
     }),
     prisma.alert.findMany({
-      where: { patientId: params.patientId, isResolved: false },
-      orderBy: { createdAt: 'desc' },
+      where: {
+        patientId: params.patientId,
+        status: 'OPEN',
+        severity: { in: ['CRITICAL', 'WARNING'] },
+      },
+      orderBy: [{ severity: 'asc' }, { createdAt: 'desc' }],
       take: 5,
     }),
     prisma.medicationLog.findFirst({
@@ -89,7 +93,12 @@ export default async function PatientDashboard({ params }: { params: { patientId
 
       {openAlerts.length > 0 && (
         <div className="space-y-2">
-          <p className="font-semibold">Alertas abiertas ({openAlerts.length})</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold">Alertas que requieren atención ({openAlerts.length})</p>
+            <Link href={`/pacientes/${patient.id}/alertas`} className="text-sm text-brand hover:underline">
+              Ver todas
+            </Link>
+          </div>
           {openAlerts.map((a) => {
             const style = ALERT_SEVERITY_STYLE[a.severity];
             const href = alertLinkHref({ patientId: patient.id, type: a.type, sourceId: a.sourceId });
@@ -111,6 +120,16 @@ export default async function PatientDashboard({ params }: { params: { patientId
             );
           })}
         </div>
+      )}
+
+      {/* Acceso a alertas si no hay críticas */}
+      {openAlerts.length === 0 && (
+        <Link
+          href={`/pacientes/${patient.id}/alertas`}
+          className="block text-sm text-slate-600 hover:text-brand"
+        >
+          Ver todas las alertas →
+        </Link>
       )}
 
       {/* Resumen del día */}

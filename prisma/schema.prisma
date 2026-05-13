@@ -55,6 +55,8 @@ model User {
   medicalFiles         MedicalFile[]  @relation("MedicalFileUploader")
   medicationsCreated   Medication[]
   alertsResolved       Alert[]        @relation("AlertResolver")
+  alertsIgnored        Alert[]        @relation("AlertIgnorer")
+  alertsReopened       Alert[]        @relation("AlertReopener")
 
   @@index([organizationId])
 }
@@ -486,11 +488,27 @@ model Alert {
   title        String
   message      String
   severity     AlertSeverity
+
+  // Estado canónico de la alerta. `isResolved` se sigue manteniendo en sync
+  // (true cuando status != OPEN) para mantener compatibilidad con queries
+  // existentes y el índice histórico.
+  status       AlertStatus   @default(OPEN)
   isRead       Boolean       @default(false)
   isResolved   Boolean       @default(false)
+
   resolvedById String?
   resolvedBy   User?         @relation("AlertResolver", fields: [resolvedById], references: [id])
   resolvedAt   DateTime?
+  resolutionReason String?
+
+  ignoredById  String?
+  ignoredBy    User?         @relation("AlertIgnorer", fields: [ignoredById], references: [id])
+  ignoredAt    DateTime?
+
+  reopenedById String?
+  reopenedBy   User?         @relation("AlertReopener", fields: [reopenedById], references: [id])
+  reopenedAt   DateTime?
+
   createdAt    DateTime      @default(now())
 
   // Para evitar duplicar la misma alerta abierta y poder linkear al recurso origen.
@@ -501,6 +519,7 @@ model Alert {
 
   @@index([patientId, isResolved, createdAt])
   @@index([patientId, type, sourceId, isResolved])
+  @@index([patientId, status, createdAt])
 }
 
 enum AlertType {
@@ -519,6 +538,12 @@ enum AlertSeverity {
   INFO
   WARNING
   CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  RESOLVED
+  IGNORED
 }
 
 // ─────────────────────────────────────────
