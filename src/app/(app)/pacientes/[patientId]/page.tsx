@@ -181,6 +181,7 @@ export default async function PatientDashboard({ params }: { params: { patientId
             <ActionCard emoji="👥" title="Personas y permisos" href={`/pacientes/${patient.id}/usuarios`} />
             <ActionCard emoji="📋" title="Historial médico" href={`/pacientes/${patient.id}/historial`} />
             <ActionCard emoji="📎" title="Archivos médicos" href={`/pacientes/${patient.id}/archivos`} />
+            <ActionCard emoji="🔍" title="Ver auditoría" href={`/pacientes/${patient.id}/auditoria`} />
           </div>
         </section>
       )}
