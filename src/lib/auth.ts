@@ -9,22 +9,17 @@ declare module 'next-auth' {
   interface Session {
     user: {
       id: string;
-      email: string;
-      name: string;
       globalRole: GlobalRole;
       organizationId: string;
     } & DefaultSession['user'];
   }
   interface User {
-    id: string;
-    email: string;
-    name: string;
     globalRole: GlobalRole;
     organizationId: string;
   }
 }
 
-declare module 'next-auth/jwt' {
+declare module '@auth/core/jwt' {
   interface JWT {
     id: string;
     globalRole: GlobalRole;
@@ -77,7 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user) {
+      if (user && user.id) {
         token.id = user.id;
         token.globalRole = user.globalRole;
         token.organizationId = user.organizationId;

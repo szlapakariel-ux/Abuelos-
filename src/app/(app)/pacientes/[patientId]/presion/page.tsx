@@ -82,7 +82,7 @@ export default async function VitalsPage({ params }: { params: { patientId: stri
           <p className="text-amber-900 font-semibold">No hay rangos médicos configurados</p>
           <p className="text-sm text-amber-800 mt-1">
             Los valores se registran sin clasificar. {canEdit && (
-              <Link href={`/pacientes/${params.patientId}/editar`} className="underline">
+              <Link href={`/pacientes/${params.patientId}/rangos`} className="underline">
                 Configurar rangos
               </Link>
             )}

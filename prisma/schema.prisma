@@ -336,12 +336,46 @@ model DailyStatus {
   @@index([patientId, date])
 }
 
-enum Mood           { GOOD FAIR SAD IRRITABLE CONFUSED }
-enum SleepQuality   { GOOD FAIR BAD }
-enum MobilityStatus { NORMAL WITH_HELP DIFFICULTY BED }
-enum HygieneStatus  { DONE PARTIAL NOT_DONE }
-enum BowelStatus    { NORMAL CONSTIPATION DIARRHEA NO_DATA }
-enum PainLevel      { NONE MILD MODERATE SEVERE }
+enum Mood {
+  GOOD
+  FAIR
+  SAD
+  IRRITABLE
+  CONFUSED
+}
+
+enum SleepQuality {
+  GOOD
+  FAIR
+  BAD
+}
+
+enum MobilityStatus {
+  NORMAL
+  WITH_HELP
+  DIFFICULTY
+  BED
+}
+
+enum HygieneStatus {
+  DONE
+  PARTIAL
+  NOT_DONE
+}
+
+enum BowelStatus {
+  NORMAL
+  CONSTIPATION
+  DIARRHEA
+  NO_DATA
+}
+
+enum PainLevel {
+  NONE
+  MILD
+  MODERATE
+  SEVERE
+}
 
 // ─────────────────────────────────────────
 // HISTORIAL MÉDICO

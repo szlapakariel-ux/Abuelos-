@@ -127,7 +127,7 @@ export default async function AcceptInvitationPage({ params }: { params: { token
       </p>
 
       {session ? (
-        session.user.email.toLowerCase() === invitation.email.toLowerCase() ? (
+        session.user.email?.toLowerCase() === invitation.email.toLowerCase() ? (
           <form action={acceptForLoggedUser} className="mt-5">
             <input type="hidden" name="token" value={params.token} />
             <button type="submit" className="btn-primary btn-lg w-full">Aceptar invitación</button>
