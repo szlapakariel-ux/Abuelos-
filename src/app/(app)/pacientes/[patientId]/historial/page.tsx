@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getPatientAccess, canUploadFilesFor } from '@/lib/permissions';
+import { canDeleteMedicalRecords, getPatientAccess, canUploadFilesFor } from '@/lib/permissions';
 import { formatDate } from '@/lib/utils';
 import { formatDateTime } from '@/lib/date';
 import {
@@ -38,10 +38,11 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
   ]);
 
   const canUpload = canUploadFilesFor(access);
+  const canDelete = canDeleteMedicalRecords(access);
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-sm text-slate-600">
             <Link href={`/pacientes/${params.patientId}`} className="hover:text-brand">← Volver</Link>
@@ -49,12 +50,20 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
           <h1 className="text-xl font-bold mt-1">Historial médico</h1>
         </div>
         {canUpload && (
-          <Link
-            href={`/pacientes/${params.patientId}/historial/nuevo`}
-            className="btn-primary"
-          >
-            + Nuevo evento
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href={`/pacientes/${params.patientId}/historial/archivo-nuevo`}
+              className="btn-secondary"
+            >
+              + Archivo suelto
+            </Link>
+            <Link
+              href={`/pacientes/${params.patientId}/historial/nuevo`}
+              className="btn-primary"
+            >
+              + Nuevo evento
+            </Link>
+          </div>
         )}
       </div>
 
@@ -93,6 +102,24 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
                       )}
                     </div>
                   </div>
+                  {canUpload && (
+                    <div className="flex items-center gap-2 text-sm shrink-0">
+                      <Link
+                        href={`/pacientes/${params.patientId}/historial/${ev.id}/editar`}
+                        className="text-brand hover:underline"
+                      >
+                        Editar
+                      </Link>
+                      {canDelete && (
+                        <Link
+                          href={`/pacientes/${params.patientId}/historial/${ev.id}/borrar`}
+                          className="text-danger hover:underline"
+                        >
+                          Borrar
+                        </Link>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 space-y-2 text-sm text-slate-700">
@@ -112,7 +139,7 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
                     </p>
                     <ul className="space-y-1">
                       {ev.files.map((f) => (
-                        <li key={f.id}>
+                        <li key={f.id} className="flex items-center justify-between gap-2">
                           <FileLink
                             id={f.id}
                             name={f.name}
@@ -120,6 +147,14 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
                             sizeBytes={f.sizeBytes}
                             category={FILE_CATEGORY_LABEL[f.category]}
                           />
+                          {canUpload && (
+                            <Link
+                              href={`/pacientes/${params.patientId}/archivos/${f.id}/editar`}
+                              className="text-xs text-brand hover:underline shrink-0"
+                            >
+                              Editar
+                            </Link>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -141,13 +176,23 @@ export default async function MedicalHistoryPage({ params }: { params: { patient
           <div className="space-y-2">
             {looseFiles.map((f) => (
               <div key={f.id} className="card">
-                <FileLink
-                  id={f.id}
-                  name={f.name}
-                  mimeType={f.mimeType}
-                  sizeBytes={f.sizeBytes}
-                  category={FILE_CATEGORY_LABEL[f.category]}
-                />
+                <div className="flex items-center justify-between gap-2">
+                  <FileLink
+                    id={f.id}
+                    name={f.name}
+                    mimeType={f.mimeType}
+                    sizeBytes={f.sizeBytes}
+                    category={FILE_CATEGORY_LABEL[f.category]}
+                  />
+                  {canUpload && (
+                    <Link
+                      href={`/pacientes/${params.patientId}/archivos/${f.id}/editar`}
+                      className="text-xs text-brand hover:underline shrink-0"
+                    >
+                      Editar
+                    </Link>
+                  )}
+                </div>
                 {f.description && <p className="text-sm text-slate-600 mt-1">{f.description}</p>}
                 <p className="text-xs text-slate-500 mt-1">
                   Subido por {f.uploadedBy.name} · {formatDateTime(f.createdAt)}
