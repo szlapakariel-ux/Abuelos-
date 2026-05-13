@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+build/
+dist/
+
+# env
+.env
+.env.local
+.env*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# misc
+.DS_Store
+*.pem
+.vercel
+.turbo
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma
+prisma/*.db
+prisma/*.db-journal
+
+# IDE
+.vscode/
+.idea/
+
+# uploads locales de prueba
+/tmp-uploads/

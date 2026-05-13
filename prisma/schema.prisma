@@ -1,0 +1,494 @@
+// Cuidado Mayor — Schema completo MVP
+// Ver docs/MODELO_DATOS.md para descripción funcional.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ORGANIZACIÓN
+// ─────────────────────────────────────────
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  type      OrgType
+  createdAt DateTime @default(now())
+
+  users    User[]
+  patients Patient[]
+}
+
+enum OrgType {
+  FAMILY
+  AGENCY
+}
+
+// ─────────────────────────────────────────
+// USUARIO
+// ─────────────────────────────────────────
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  globalRole     GlobalRole
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  lastLoginAt    DateTime?
+
+  patientAccess        PatientUser[]
+  auditLogs            AuditLog[]
+  invitationsSent      Invitation[]   @relation("InvitedBy")
+  medicationLogs       MedicationLog[]
+  vitalSigns           VitalSign[]
+  mealLogs             MealLog[]
+  dailyStatuses        DailyStatus[]
+  medicalEventsCreated MedicalEvent[]
+  filesUploaded        PatientFile[]  @relation("PatientFileUploader")
+  medicalFiles         MedicalFile[]  @relation("MedicalFileUploader")
+  medicationsCreated   Medication[]
+  alertsResolved       Alert[]        @relation("AlertResolver")
+
+  @@index([organizationId])
+}
+
+enum GlobalRole {
+  AGENCY_ADMIN
+  FAMILY_ADMIN
+  CAREGIVER
+  FAMILY_MEMBER
+}
+
+// ─────────────────────────────────────────
+// PACIENTE
+// ─────────────────────────────────────────
+model Patient {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+
+  fullName              String
+  birthDate             DateTime
+  dni                   String?
+  address               String?
+  phone                 String?
+  photoUrl              String?
+
+  healthInsurance       String?
+  affiliateNumber       String?
+
+  primaryDoctor         String?
+  primaryDoctorPhone    String?
+
+  emergencyContactName  String?
+  emergencyContactPhone String?
+
+  allergies             String?
+  relevantDiagnoses     String?
+  dietaryRestrictions   String?
+  mobilityLevel         MobilityLevel @default(NORMAL)
+  fallRisk              FallRisk      @default(LOW)
+  importantNotes        String?
+
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  users         PatientUser[]
+  medications   Medication[]
+  vitalSigns    VitalSign[]
+  mealLogs      MealLog[]
+  dailyStatuses DailyStatus[]
+  medicalEvents MedicalEvent[]
+  files         PatientFile[]
+  medicalFiles  MedicalFile[]
+  alerts        Alert[]
+  invitations   Invitation[]
+
+  @@index([organizationId])
+}
+
+enum MobilityLevel {
+  NORMAL
+  WITH_HELP
+  DIFFICULTY
+  BED_RIDDEN
+}
+
+enum FallRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// ─────────────────────────────────────────
+// PIVOT USUARIO ↔ PACIENTE
+// ─────────────────────────────────────────
+model PatientUser {
+  id                   String      @id @default(cuid())
+  patientId            String
+  patient              Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patientRole          PatientRole
+  canUploadFiles       Boolean     @default(false)
+  canEditMedical       Boolean     @default(false)
+  receivesEmailReports Boolean     @default(true)
+  assignedAt           DateTime    @default(now())
+
+  @@unique([patientId, userId])
+  @@index([userId])
+}
+
+enum PatientRole {
+  ADMIN
+  CAREGIVER
+  FAMILY
+}
+
+// ─────────────────────────────────────────
+// MEDICACIÓN
+// ─────────────────────────────────────────
+model Medication {
+  id                 String     @id @default(cuid())
+  patientId          String
+  patient            Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  name               String
+  dose               String
+  instructions       String?
+  prescribingDoctor  String?
+  startDate          DateTime
+  endDate            DateTime?
+  prescriptionExpiry DateTime?
+  stockUnits         Int?
+
+  status             MedStatus  @default(ACTIVE)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  createdById        String
+  createdBy          User       @relation(fields: [createdById], references: [id])
+
+  schedules          MedicationSchedule[]
+  logs               MedicationLog[]
+
+  @@index([patientId, status])
+}
+
+enum MedStatus {
+  ACTIVE
+  SUSPENDED
+  FINISHED
+}
+
+model MedicationSchedule {
+  id           String   @id @default(cuid())
+  medicationId String
+  medication   Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+  timeSlot     TimeSlot
+  customTime   String?
+
+  @@index([medicationId])
+}
+
+enum TimeSlot {
+  MORNING
+  NOON
+  AFTERNOON
+  NIGHT
+  CUSTOM
+}
+
+model MedicationLog {
+  id           String     @id @default(cuid())
+  medicationId String
+  medication   Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+  scheduleSlot TimeSlot
+  scheduledFor DateTime
+  recordedAt   DateTime   @default(now())
+  status       TakeStatus
+  actualTime   DateTime?
+  notes        String?
+  reason       String?
+  recordedById String
+  recordedBy   User       @relation(fields: [recordedById], references: [id])
+
+  @@index([medicationId, scheduledFor])
+}
+
+enum TakeStatus {
+  TAKEN
+  NOT_TAKEN
+  REFUSED
+  DELAYED
+}
+
+// ─────────────────────────────────────────
+// SIGNOS VITALES
+// ─────────────────────────────────────────
+model VitalSign {
+  id           String      @id @default(cuid())
+  patientId    String
+  patient      Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  systolic     Int
+  diastolic    Int
+  pulse        Int?
+  oxygenSat    Int?
+  recordedAt   DateTime
+  notes        String?
+  status       VitalStatus
+  recordedById String
+  recordedBy   User        @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime    @default(now())
+
+  @@index([patientId, recordedAt])
+}
+
+enum VitalStatus {
+  NORMAL
+  REVIEW
+  ALERT
+}
+
+// ─────────────────────────────────────────
+// ALIMENTACIÓN
+// ─────────────────────────────────────────
+model MealLog {
+  id                   String      @id @default(cuid())
+  patientId            String
+  patient              Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date                 DateTime
+  mealType             MealType
+  intake               IntakeLevel
+  liquidIntake         LiquidLevel?
+  nausea               Boolean     @default(false)
+  vomiting             Boolean     @default(false)
+  swallowingDifficulty Boolean     @default(false)
+  refusal              Boolean     @default(false)
+  notes                String?
+  photoUrl             String?
+  recordedById         String
+  recordedBy           User        @relation(fields: [recordedById], references: [id])
+  createdAt            DateTime    @default(now())
+
+  @@index([patientId, date])
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  SNACK
+  DINNER
+}
+
+enum IntakeLevel {
+  GOOD
+  SOME
+  NONE
+}
+
+enum LiquidLevel {
+  GOOD
+  LOW
+  NONE
+}
+
+// ─────────────────────────────────────────
+// ESTADO GENERAL
+// ─────────────────────────────────────────
+model DailyStatus {
+  id           String         @id @default(cuid())
+  patientId    String
+  patient      Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date         DateTime
+  mood         Mood
+  sleep        SleepQuality
+  mobility     MobilityStatus
+  hygiene      HygieneStatus
+  bowel        BowelStatus
+  pain         PainLevel
+  notes        String?
+  recordedById String
+  recordedBy   User           @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@index([patientId, date])
+}
+
+enum Mood           { GOOD FAIR SAD IRRITABLE CONFUSED }
+enum SleepQuality   { GOOD FAIR BAD }
+enum MobilityStatus { NORMAL WITH_HELP DIFFICULTY BED }
+enum HygieneStatus  { DONE PARTIAL NOT_DONE }
+enum BowelStatus    { NORMAL CONSTIPATION DIARRHEA NO_DATA }
+enum PainLevel      { NONE MILD MODERATE SEVERE }
+
+// ─────────────────────────────────────────
+// HISTORIAL MÉDICO
+// ─────────────────────────────────────────
+model MedicalEvent {
+  id              String           @id @default(cuid())
+  patientId       String
+  patient         Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date            DateTime
+  type            MedicalEventType
+  professional    String?
+  institution     String?
+  reason          String?
+  summary         String?
+  indications     String?
+  nextAppointment DateTime?
+  notes           String?
+  uploadedById    String
+  uploadedBy      User             @relation(fields: [uploadedById], references: [id])
+  createdAt       DateTime         @default(now())
+
+  files           MedicalFile[]
+
+  @@index([patientId, date])
+}
+
+enum MedicalEventType {
+  CONSULTATION
+  EMERGENCY
+  HOSPITALIZATION
+  STUDY
+  LAB
+  IMAGING
+  PRESCRIPTION
+  MEDICAL_ORDER
+  DIAGNOSIS
+  REPORT
+  OTHER
+}
+
+// ─────────────────────────────────────────
+// ARCHIVOS
+// ─────────────────────────────────────────
+model MedicalFile {
+  id             String        @id @default(cuid())
+  medicalEventId String?
+  medicalEvent   MedicalEvent? @relation(fields: [medicalEventId], references: [id], onDelete: SetNull)
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  storageKey     String        // key/path en R2
+  mimeType       String
+  sizeBytes      Int
+  category       FileCategory
+  uploadedById   String
+  uploadedBy     User          @relation("MedicalFileUploader", fields: [uploadedById], references: [id])
+  createdAt      DateTime      @default(now())
+
+  @@index([patientId])
+  @@index([medicalEventId])
+}
+
+model PatientFile {
+  id           String       @id @default(cuid())
+  patientId    String
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  category     FileCategory
+  uploadedById String
+  uploadedBy   User         @relation("PatientFileUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  @@index([patientId])
+}
+
+enum FileCategory {
+  PRESCRIPTION
+  LAB_RESULT
+  IMAGING
+  REPORT
+  INSURANCE
+  IDENTIFICATION
+  OTHER
+}
+
+// ─────────────────────────────────────────
+// ALERTAS
+// ─────────────────────────────────────────
+model Alert {
+  id           String        @id @default(cuid())
+  patientId    String
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  type         AlertType
+  message      String
+  severity     AlertSeverity
+  isRead       Boolean       @default(false)
+  isResolved   Boolean       @default(false)
+  resolvedById String?
+  resolvedBy   User?         @relation("AlertResolver", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  metadata     Json?
+
+  @@index([patientId, isResolved, createdAt])
+}
+
+enum AlertType {
+  MED_NOT_REGISTERED
+  MED_NOT_TAKEN
+  PRESCRIPTION_EXPIRY
+  VITAL_OUT_OF_RANGE
+  DAILY_LOG_MISSING
+  NEW_FILE_UPLOADED
+  NEW_MEDICAL_EVENT
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  URGENT
+}
+
+// ─────────────────────────────────────────
+// INVITACIONES
+// ─────────────────────────────────────────
+model Invitation {
+  id          String      @id @default(cuid())
+  email       String
+  patientId   String
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientRole PatientRole
+  token       String      @unique
+  invitedById String
+  invitedBy   User        @relation("InvitedBy", fields: [invitedById], references: [id])
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime    @default(now())
+
+  @@index([email])
+  @@index([patientId])
+}
+
+// ─────────────────────────────────────────
+// AUDITORÍA
+// ─────────────────────────────────────────
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityId   String?
+  entityType String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+}
