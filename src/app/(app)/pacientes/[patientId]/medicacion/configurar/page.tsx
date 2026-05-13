@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canEditPatientData, getPatientAccess } from '@/lib/permissions';
 import { MedStatus, TimeSlot } from '@prisma/client';
+import { SLOT_LABEL } from '@/lib/medication-day';
 
 async function createMedication(formData: FormData) {
   'use server';
@@ -19,6 +20,15 @@ async function createMedication(formData: FormData) {
   if (!name || !dose) throw new Error('Faltan datos');
 
   const slots = (formData.getAll('slots') as string[]) as TimeSlot[];
+  const customTimesRaw = String(formData.get('customTimes') || '').trim();
+  const customTimes = customTimesRaw
+    ? customTimesRaw.split(',').map((s) => s.trim()).filter((s) => /^\d{1,2}:\d{2}$/.test(s))
+    : [];
+
+  if (slots.length === 0 && customTimes.length === 0) {
+    throw new Error('Configurá al menos un horario');
+  }
+
   const startDate = String(formData.get('startDate') || '');
   const endDate = String(formData.get('endDate') || '');
   const prescriptionExpiry = String(formData.get('prescriptionExpiry') || '');
@@ -28,6 +38,7 @@ async function createMedication(formData: FormData) {
       patientId,
       name,
       dose,
+      frequencyText: optString(formData.get('frequencyText')),
       instructions: optString(formData.get('instructions')),
       prescribingDoctor: optString(formData.get('prescribingDoctor')),
       startDate: startDate ? new Date(startDate) : new Date(),
@@ -35,7 +46,12 @@ async function createMedication(formData: FormData) {
       prescriptionExpiry: prescriptionExpiry ? new Date(prescriptionExpiry) : null,
       status: MedStatus.ACTIVE,
       createdById: session.user.id,
-      schedules: { create: slots.map((s) => ({ timeSlot: s })) },
+      schedules: {
+        create: [
+          ...slots.map((s) => ({ timeSlot: s })),
+          ...customTimes.map((t) => ({ timeSlot: TimeSlot.CUSTOM, customTime: t })),
+        ],
+      },
     },
   });
 
@@ -47,11 +63,20 @@ async function updateStatus(formData: FormData) {
   const medicationId = String(formData.get('medicationId'));
   const patientId = String(formData.get('patientId'));
   const status = String(formData.get('status')) as MedStatus;
+  const suspendUntilRaw = String(formData.get('suspendedUntil') || '');
   const session = await auth();
   if (!session) redirect('/login');
   const access = await getPatientAccess(session.user.id, patientId);
   if (!access || !canEditPatientData(access.patientRole)) throw new Error('No autorizado');
-  await prisma.medication.update({ where: { id: medicationId }, data: { status } });
+
+  await prisma.medication.update({
+    where: { id: medicationId },
+    data: {
+      status,
+      suspendedUntil:
+        status === MedStatus.SUSPENDED && suspendUntilRaw ? new Date(suspendUntilRaw) : null,
+    },
+  });
   revalidatePath(`/pacientes/${patientId}/medicacion/configurar`);
 }
 
@@ -59,14 +84,6 @@ function optString(v: FormDataEntryValue | null) {
   const s = (v ?? '').toString().trim();
   return s.length ? s : null;
 }
-
-const SLOT_LABEL: Record<TimeSlot, string> = {
-  MORNING: 'Mañana',
-  NOON: 'Mediodía',
-  AFTERNOON: 'Tarde',
-  NIGHT: 'Noche',
-  CUSTOM: 'Personalizado',
-};
 
 export default async function MedicationConfigPage({ params }: { params: { patientId: string } }) {
   const session = await auth();
@@ -106,6 +123,11 @@ export default async function MedicationConfigPage({ params }: { params: { patie
         </div>
 
         <div>
+          <label className="label">Frecuencia (texto libre)</label>
+          <input name="frequencyText" className="input" placeholder="ej.: cada 8 hs, 1 vez por día" />
+        </div>
+
+        <div>
           <label className="label">Indicaciones</label>
           <input name="instructions" className="input" placeholder="Con agua, después de comer…" />
         </div>
@@ -126,15 +148,25 @@ export default async function MedicationConfigPage({ params }: { params: { patie
         </div>
 
         <div>
-          <label className="label">Horarios</label>
+          <label className="label">Horarios fijos</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {(['MORNING', 'NOON', 'AFTERNOON', 'NIGHT'] as TimeSlot[]).map((s) => (
-              <label key={s} className="flex items-center gap-2 card cursor-pointer p-3">
+              <label key={s} className="flex items-center gap-2 card cursor-pointer p-3 has-[:checked]:border-brand">
                 <input type="checkbox" name="slots" value={s} className="size-5" />
                 <span className="font-medium">{SLOT_LABEL[s]}</span>
               </label>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="label">Horarios personalizados (opcional)</label>
+          <input
+            name="customTimes"
+            className="input"
+            placeholder="ej.: 07:30, 14:00, 22:00"
+          />
+          <p className="text-xs text-slate-500 mt-1">Separá los horarios con coma. Formato HH:MM.</p>
         </div>
 
         <div>
@@ -155,13 +187,19 @@ export default async function MedicationConfigPage({ params }: { params: { patie
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold">{m.name} <span className="font-normal text-slate-600">— {m.dose}</span></p>
+                  {m.frequencyText && <p className="text-sm text-slate-600">{m.frequencyText}</p>}
                   {m.instructions && <p className="text-sm text-slate-600 mt-1">{m.instructions}</p>}
                   <p className="text-sm text-slate-600 mt-1">
-                    Horarios: {m.schedules.map((s) => SLOT_LABEL[s.timeSlot]).join(', ') || '—'}
+                    Horarios: {m.schedules.map((s) => s.timeSlot === 'CUSTOM' ? s.customTime : SLOT_LABEL[s.timeSlot]).join(', ') || '—'}
                   </p>
                   {m.prescriptionExpiry && (
                     <p className="text-sm text-slate-600">
                       Receta vence: {new Intl.DateTimeFormat('es-AR').format(m.prescriptionExpiry)}
+                    </p>
+                  )}
+                  {m.status === 'SUSPENDED' && m.suspendedUntil && (
+                    <p className="text-sm text-amber-700">
+                      Suspendido hasta: {new Intl.DateTimeFormat('es-AR').format(m.suspendedUntil)}
                     </p>
                   )}
                 </div>
@@ -174,19 +212,33 @@ export default async function MedicationConfigPage({ params }: { params: { patie
                 </span>
               </div>
 
-              <form action={updateStatus} className="mt-3 flex gap-2">
-                <input type="hidden" name="medicationId" value={m.id} />
-                <input type="hidden" name="patientId" value={params.patientId} />
+              <div className="mt-3 flex flex-wrap gap-2 items-center">
                 {m.status !== 'ACTIVE' && (
-                  <button name="status" value="ACTIVE" className="btn-secondary text-sm">Activar</button>
+                  <form action={updateStatus}>
+                    <input type="hidden" name="medicationId" value={m.id} />
+                    <input type="hidden" name="patientId" value={params.patientId} />
+                    <input type="hidden" name="status" value="ACTIVE" />
+                    <button className="btn-secondary text-sm">Activar</button>
+                  </form>
                 )}
                 {m.status !== 'SUSPENDED' && (
-                  <button name="status" value="SUSPENDED" className="btn-secondary text-sm">Suspender</button>
+                  <form action={updateStatus} className="flex items-center gap-2">
+                    <input type="hidden" name="medicationId" value={m.id} />
+                    <input type="hidden" name="patientId" value={params.patientId} />
+                    <input type="hidden" name="status" value="SUSPENDED" />
+                    <input type="date" name="suspendedUntil" className="input text-sm py-2" title="Suspender hasta" />
+                    <button className="btn-secondary text-sm">Suspender</button>
+                  </form>
                 )}
                 {m.status !== 'FINISHED' && (
-                  <button name="status" value="FINISHED" className="btn-secondary text-sm">Finalizar</button>
+                  <form action={updateStatus}>
+                    <input type="hidden" name="medicationId" value={m.id} />
+                    <input type="hidden" name="patientId" value={params.patientId} />
+                    <input type="hidden" name="status" value="FINISHED" />
+                    <button className="btn-secondary text-sm">Finalizar</button>
+                  </form>
                 )}
-              </form>
+              </div>
             </div>
           ))
         )}

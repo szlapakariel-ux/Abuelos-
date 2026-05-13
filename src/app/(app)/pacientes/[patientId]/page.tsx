@@ -2,8 +2,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getPatientAccess, canEditPatientData } from '@/lib/permissions';
+import { canEditPatientData, canRegisterDailyCare, getPatientAccess } from '@/lib/permissions';
 import { calculateAge } from '@/lib/utils';
+import { startOfToday, endOfToday, formatDateTime, formatTime, relativeFromNow } from '@/lib/date';
+import { getDaySchedule, TAKE_STATUS_LABEL } from '@/lib/medication-day';
+import { VITAL_STATUS_STYLE } from '@/lib/vitals';
 
 export default async function PatientDashboard({ params }: { params: { patientId: string } }) {
   const session = await auth();
@@ -12,45 +15,115 @@ export default async function PatientDashboard({ params }: { params: { patientId
   const access = await getPatientAccess(session.user.id, params.patientId);
   if (!access) notFound();
 
-  const patient = await prisma.patient.findUnique({
-    where: { id: params.patientId },
-    include: {
-      _count: { select: { medications: { where: { status: 'ACTIVE' } }, users: true } },
-    },
-  });
+  const patient = await prisma.patient.findUnique({ where: { id: params.patientId } });
   if (!patient) notFound();
 
+  const today = startOfToday();
+  const end = endOfToday();
+
+  const [meds, lastVital, lastMeal, lastStatus, openAlerts, lastCaregiverLog] = await Promise.all([
+    prisma.medication.findMany({
+      where: { patientId: params.patientId },
+      include: {
+        schedules: true,
+        logs: { where: { scheduledFor: { gte: today, lte: end } } },
+      },
+    }),
+    prisma.vitalSign.findFirst({
+      where: { patientId: params.patientId },
+      orderBy: { recordedAt: 'desc' },
+      include: { recordedBy: { select: { name: true } } },
+    }),
+    prisma.mealLog.findFirst({
+      where: { patientId: params.patientId },
+      orderBy: { date: 'desc' },
+      include: { recordedBy: { select: { name: true } } },
+    }),
+    prisma.dailyStatus.findFirst({
+      where: { patientId: params.patientId, date: { gte: today, lte: end } },
+      orderBy: { date: 'desc' },
+    }),
+    prisma.alert.findMany({
+      where: { patientId: params.patientId, isResolved: false },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
+    prisma.medicationLog.findFirst({
+      where: { medication: { patientId: params.patientId }, recordedBy: { globalRole: 'CAREGIVER' } },
+      orderBy: { recordedAt: 'desc' },
+      include: { recordedBy: { select: { name: true } } },
+    }),
+  ]);
+
+  const slots = getDaySchedule(meds, today);
+  const pendingDoses = slots.filter((s) => !s.log);
+  const takenDoses = slots.filter((s) => s.log && s.log.status === 'TAKEN');
+  const issueDoses = slots.filter((s) => s.log && s.log.status !== 'TAKEN');
+
   const isAdmin = canEditPatientData(access.patientRole);
+  const canRegister = canRegisterDailyCare(access.patientRole);
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-600">
-            <Link href="/pacientes" className="hover:text-brand">← Pacientes</Link>
-          </p>
-          <h1 className="text-2xl font-bold mt-1">{patient.fullName}</h1>
-          <p className="text-slate-600">{calculateAge(patient.birthDate)} años</p>
-        </div>
+      <div>
+        <p className="text-sm text-slate-600">
+          <Link href="/pacientes" className="hover:text-brand">← Pacientes</Link>
+        </p>
+        <h1 className="text-2xl font-bold mt-1">{patient.fullName}</h1>
+        <p className="text-slate-600">{calculateAge(patient.birthDate)} años</p>
       </div>
 
-      {/* Resumen rápido */}
-      <div className="grid sm:grid-cols-3 gap-3">
-        <SummaryCard title="Medicación activa" value={`${patient._count.medications}`} href={`/pacientes/${patient.id}/medicacion`} />
-        <SummaryCard title="Personas con acceso" value={`${patient._count.users}`} href={`/pacientes/${patient.id}/usuarios`} />
-        <SummaryCard title="Obra social" value={patient.healthInsurance || '—'} />
-      </div>
-
-      {/* Acciones de cuidado del día */}
-      <section>
-        <h2 className="font-semibold mb-2">Registros de hoy</h2>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <ActionCard emoji="💊" title="Medicación del día" href={`/pacientes/${patient.id}/medicacion`} />
-          <ActionCard emoji="🩺" title="Cargar presión" href={`/pacientes/${patient.id}/presion`} />
-          <ActionCard emoji="🍽️" title="Alimentación" href={`/pacientes/${patient.id}/alimentacion`} />
-          <ActionCard emoji="😊" title="Estado general" href={`/pacientes/${patient.id}/estado`} />
+      {patient.importantNotes && (
+        <div className="card bg-amber-50 border-amber-300">
+          <p className="text-sm font-semibold text-amber-900">Indicaciones importantes</p>
+          <p className="text-sm text-amber-900 mt-1 whitespace-pre-line">{patient.importantNotes}</p>
         </div>
+      )}
+
+      {openAlerts.length > 0 && (
+        <div className="card border-red-300">
+          <p className="font-semibold text-red-900">Alertas activas ({openAlerts.length})</p>
+          <ul className="mt-2 space-y-1">
+            {openAlerts.map((a) => (
+              <li key={a.id} className="text-sm text-red-800">• {a.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Resumen del día */}
+      <section className="grid sm:grid-cols-2 gap-3">
+        <MedSummaryCard
+          pending={pendingDoses.length}
+          taken={takenDoses.length}
+          issues={issueDoses.length}
+          href={`/pacientes/${patient.id}/medicacion`}
+        />
+        <VitalCard vital={lastVital} href={`/pacientes/${patient.id}/presion`} />
+        <MealCard meal={lastMeal} href={`/pacientes/${patient.id}/alimentacion`} />
+        <StatusTodayCard hasToday={!!lastStatus} href={`/pacientes/${patient.id}/estado`} />
       </section>
+
+      {/* Acciones de cuidado */}
+      {canRegister && (
+        <section>
+          <h2 className="font-semibold mb-2">Registrar ahora</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <BigAction emoji="💊" title="Medicación" href={`/pacientes/${patient.id}/medicacion`} />
+            <BigAction emoji="🩺" title="Presión" href={`/pacientes/${patient.id}/presion`} />
+            <BigAction emoji="🍽️" title="Comida" href={`/pacientes/${patient.id}/alimentacion`} />
+            <BigAction emoji="😊" title="Estado" href={`/pacientes/${patient.id}/estado`} />
+          </div>
+        </section>
+      )}
+
+      {lastCaregiverLog && (
+        <div className="card text-sm text-slate-600">
+          Último registro de cuidadora: <strong>{lastCaregiverLog.recordedBy.name}</strong>,{' '}
+          {relativeFromNow(lastCaregiverLog.recordedAt)} ·{' '}
+          {TAKE_STATUS_LABEL[lastCaregiverLog.status]}
+        </div>
+      )}
 
       {isAdmin && (
         <section>
@@ -67,14 +140,102 @@ export default async function PatientDashboard({ params }: { params: { patientId
   );
 }
 
-function SummaryCard({ title, value, href }: { title: string; value: string; href?: string }) {
-  const inner = (
-    <div className="card">
-      <p className="text-sm text-slate-600">{title}</p>
-      <p className="text-xl font-bold mt-1">{value}</p>
-    </div>
+function MedSummaryCard({
+  pending, taken, issues, href,
+}: { pending: number; taken: number; issues: number; href: string }) {
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <p className="text-sm text-slate-600">Medicación de hoy</p>
+      <div className="mt-2 flex items-baseline gap-3">
+        <span className="text-3xl font-bold text-brand">{pending}</span>
+        <span className="text-slate-600">pendientes</span>
+      </div>
+      <p className="text-sm text-slate-500 mt-1">
+        {taken} tomadas{issues > 0 && ` · ${issues} con observación`}
+      </p>
+    </Link>
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
+}
+
+function VitalCard({
+  vital, href,
+}: { vital: { systolic: number; diastolic: number; pulse: number | null; recordedAt: Date; status: keyof typeof VITAL_STATUS_STYLE; recordedBy: { name: string } } | null; href: string }) {
+  if (!vital) {
+    return (
+      <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+        <p className="text-sm text-slate-600">Última presión</p>
+        <p className="text-slate-500 mt-2">Sin registros aún</p>
+      </Link>
+    );
+  }
+  const style = VITAL_STATUS_STYLE[vital.status];
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">Última presión</p>
+        <span className={`text-xs font-semibold rounded-full px-2 py-1 ${style.bg} ${style.text}`}>{style.label}</span>
+      </div>
+      <p className="text-2xl font-bold mt-2">
+        {vital.systolic}<span className="text-slate-400">/</span>{vital.diastolic}
+      </p>
+      <p className="text-xs text-slate-500 mt-1">
+        {formatDateTime(vital.recordedAt)} · {vital.recordedBy.name}
+      </p>
+    </Link>
+  );
+}
+
+function MealCard({
+  meal, href,
+}: { meal: { mealType: string; date: Date; intake: string; recordedBy: { name: string } } | null; href: string }) {
+  if (!meal) {
+    return (
+      <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+        <p className="text-sm text-slate-600">Última comida</p>
+        <p className="text-slate-500 mt-2">Sin registros</p>
+      </Link>
+    );
+  }
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <p className="text-sm text-slate-600">Última comida</p>
+      <p className="font-semibold mt-2">{mealLabel(meal.mealType)}</p>
+      <p className="text-xs text-slate-500 mt-1">
+        {formatTime(meal.date)} · {meal.recordedBy.name}
+      </p>
+    </Link>
+  );
+}
+
+function StatusTodayCard({ hasToday, href }: { hasToday: boolean; href: string }) {
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <p className="text-sm text-slate-600">Estado general</p>
+      <p className="font-semibold mt-2">{hasToday ? 'Registrado hoy' : 'Sin registrar hoy'}</p>
+    </Link>
+  );
+}
+
+function mealLabel(t: string) {
+  switch (t) {
+    case 'BREAKFAST': return 'Desayuno';
+    case 'LUNCH': return 'Almuerzo';
+    case 'SNACK': return 'Merienda';
+    case 'DINNER': return 'Cena';
+    default: return t;
+  }
+}
+
+function BigAction({ emoji, title, href }: { emoji: string; title: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="card flex flex-col items-center justify-center gap-2 hover:border-brand hover:shadow-md transition py-5"
+    >
+      <span className="text-3xl">{emoji}</span>
+      <span className="font-semibold text-sm text-center">{title}</span>
+    </Link>
+  );
 }
 
 function ActionCard({ emoji, title, href }: { emoji: string; title: string; href: string }) {

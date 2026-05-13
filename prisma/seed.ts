@@ -57,6 +57,13 @@ async function main() {
       mobilityLevel: 'WITH_HELP',
       fallRisk: 'MEDIUM',
       importantNotes: 'Datos de demostración — NO son datos reales.',
+      // Rangos de presión definidos por el médico (ficticios).
+      sysNormalMin: 110,
+      sysNormalMax: 135,
+      sysReviewMax: 150,
+      diaNormalMin: 60,
+      diaNormalMax: 85,
+      diaReviewMax: 95,
     },
   });
 

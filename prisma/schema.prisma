@@ -97,6 +97,17 @@ model Patient {
   fallRisk              FallRisk      @default(LOW)
   importantNotes        String?
 
+  // Rangos de presión configurados por el médico (no hay defaults clínicos hardcodeados;
+  // si están en null, la app muestra el valor sin clasificar).
+  // Lectura: sistólica/diastólica ≤ Max => NORMAL; ≤ ReviewMax => REVIEW; > ReviewMax => ALERT.
+  // También aplica si está por debajo del Min.
+  sysNormalMin          Int?
+  sysNormalMax          Int?
+  sysReviewMax          Int?
+  diaNormalMin          Int?
+  diaNormalMax          Int?
+  diaReviewMax          Int?
+
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -163,6 +174,7 @@ model Medication {
 
   name               String
   dose               String
+  frequencyText      String?    // texto libre opcional: "cada 8hs", "1 vez por día"
   instructions       String?
   prescribingDoctor  String?
   startDate          DateTime
@@ -171,6 +183,8 @@ model Medication {
   stockUnits         Int?
 
   status             MedStatus  @default(ACTIVE)
+  // Si SUSPENDED y suspendedUntil > now, la app entiende que es una suspensión temporal.
+  suspendedUntil     DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   createdById        String

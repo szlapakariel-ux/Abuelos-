@@ -11,8 +11,8 @@ async function acceptForLoggedUser(formData: FormData) {
   const token = String(formData.get('token'));
   const session = await auth();
   if (!session) redirect('/login');
-  await consumeInvitation(token, session.user.id);
-  redirect('/pacientes');
+  const patientId = await consumeInvitation(token, session.user.id);
+  redirect(`/pacientes/${patientId}`);
 }
 
 async function acceptAndCreateUser(formData: FormData) {
@@ -54,13 +54,13 @@ async function acceptAndCreateUser(formData: FormData) {
     },
   });
 
-  await consumeInvitation(token, user.id);
+  const patientId = await consumeInvitation(token, user.id);
 
-  // Iniciamos sesión automáticamente.
-  await signIn('credentials', { email: invitation.email, password, redirectTo: '/pacientes' });
+  // Iniciamos sesión automáticamente y entramos al paciente asignado.
+  await signIn('credentials', { email: invitation.email, password, redirectTo: `/pacientes/${patientId}` });
 }
 
-async function consumeInvitation(token: string, userId: string) {
+async function consumeInvitation(token: string, userId: string): Promise<string> {
   const invitation = await prisma.invitation.findUnique({ where: { token } });
   if (!invitation || invitation.acceptedAt || invitation.expiresAt < new Date()) {
     throw new Error('Invitación inválida o expirada');
@@ -79,6 +79,7 @@ async function consumeInvitation(token: string, userId: string) {
     await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedAt: new Date() } });
   });
   revalidatePath('/pacientes');
+  return invitation.patientId;
 }
 
 export default async function AcceptInvitationPage({ params }: { params: { token: string } }) {
