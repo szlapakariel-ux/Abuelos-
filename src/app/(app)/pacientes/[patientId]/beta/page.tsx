@@ -206,7 +206,10 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
             ) : todayMeals.map((m) => (
               <div key={m.id} className="mb-1">
                 <p className="font-semibold">{mealLabel(m.mealType)} — {intakeLabel(m.intake)}</p>
-                <p className="text-xs text-slate-500">{m.recordedBy.name}</p>
+                <p className="text-xs text-slate-500">
+                  {m.recordedBy.name}
+                  {m.photoUrl && <span className="text-brand ml-1">· 📷 foto</span>}
+                </p>
               </div>
             ))}
           </div>

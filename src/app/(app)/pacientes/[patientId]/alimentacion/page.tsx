@@ -4,8 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canRegisterDailyCare, getPatientAccess } from '@/lib/permissions';
+import { logAudit } from '@/lib/audit';
+import { buildStorageKey, deleteFile, uploadFile } from '@/lib/storage';
 import { startOfToday, endOfToday, formatTime } from '@/lib/date';
 import { MealType, IntakeLevel, LiquidLevel } from '@prisma/client';
+
+const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const;
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 async function recordMeal(formData: FormData) {
   'use server';
@@ -21,7 +26,32 @@ async function recordMeal(formData: FormData) {
   const access = await getPatientAccess(session.user.id, patientId);
   if (!access || !canRegisterDailyCare(access.patientRole)) throw new Error('No autorizado');
 
-  await prisma.mealLog.create({
+  // ── Foto opcional ────────────────────────────────────────────────────────
+  const photoFile = formData.get('photo');
+  let photoUrl: string | null = null;
+
+  if (photoFile instanceof File && photoFile.size > 0) {
+    // Validar antes de guardar la comida
+    if (!(PHOTO_MIME_TYPES as readonly string[]).includes(photoFile.type)) {
+      throw new Error(`Formato de foto no permitido. Usá JPG, PNG, WEBP o HEIC.`);
+    }
+    if (photoFile.size > PHOTO_MAX_BYTES) {
+      throw new Error(`La foto supera el máximo de 10 MB.`);
+    }
+
+    // Subir a R2; si falla, guardar comida sin foto
+    try {
+      const key = buildStorageKey({ patientId, filename: `meal-${photoFile.name}` });
+      const buffer = Buffer.from(await photoFile.arrayBuffer());
+      await uploadFile({ key, body: buffer, contentType: photoFile.type });
+      photoUrl = key;
+    } catch (e) {
+      console.error('[meal-photo] upload R2 falló, guardando sin foto', e);
+      photoUrl = null;
+    }
+  }
+
+  const meal = await prisma.mealLog.create({
     data: {
       patientId,
       date: new Date(),
@@ -33,9 +63,20 @@ async function recordMeal(formData: FormData) {
       swallowingDifficulty: formData.get('swallowingDifficulty') === 'on',
       refusal: formData.get('refusal') === 'on',
       notes,
+      photoUrl,
       recordedById: session.user.id,
     },
   });
+
+  if (photoUrl) {
+    await logAudit({
+      userId: session.user.id,
+      action: 'meal.photo.uploaded',
+      entityType: 'MealLog',
+      entityId: meal.id,
+      metadata: { patientId, mealType },
+    });
+  }
 
   revalidatePath(`/pacientes/${patientId}/alimentacion`);
   revalidatePath(`/pacientes/${patientId}`);
@@ -66,6 +107,8 @@ export default async function MealPage({ params }: { params: { patientId: string
   const access = await getPatientAccess(session.user.id, params.patientId);
   if (!access) notFound();
 
+  const canRegister = canRegisterDailyCare(access.patientRole);
+
   const today = await prisma.mealLog.findMany({
     where: { patientId: params.patientId, date: { gte: startOfToday(), lte: endOfToday() } },
     orderBy: { date: 'desc' },
@@ -81,69 +124,82 @@ export default async function MealPage({ params }: { params: { patientId: string
         <h1 className="text-xl font-bold mt-1">Alimentación de hoy</h1>
       </div>
 
-      <form action={recordMeal} className="card space-y-4">
-        <input type="hidden" name="patientId" value={params.patientId} />
+      {canRegister && (
+        <form action={recordMeal} encType="multipart/form-data" className="card space-y-4">
+          <input type="hidden" name="patientId" value={params.patientId} />
 
-        <div>
-          <label className="label">¿Qué comida?</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['BREAKFAST', 'LUNCH', 'SNACK', 'DINNER'] as MealType[]).map((m, i) => (
-              <label key={m} className="card cursor-pointer p-3 flex items-center gap-2 has-[:checked]:border-brand has-[:checked]:bg-brand-50">
-                <input type="radio" name="mealType" value={m} required defaultChecked={i === 0} className="size-5" />
-                <span className="font-semibold">{MEAL_LABEL[m]}</span>
-              </label>
-            ))}
+          <div>
+            <label className="label">¿Qué comida?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['BREAKFAST', 'LUNCH', 'SNACK', 'DINNER'] as MealType[]).map((m, i) => (
+                <label key={m} className="card cursor-pointer p-3 flex items-center gap-2 has-[:checked]:border-brand has-[:checked]:bg-brand-50">
+                  <input type="radio" name="mealType" value={m} required defaultChecked={i === 0} className="size-5" />
+                  <span className="font-semibold">{MEAL_LABEL[m]}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="label">¿Cómo comió?</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['GOOD', 'SOME', 'NONE'] as IntakeLevel[]).map((v) => (
-              <label key={v} className="card cursor-pointer p-3 text-center has-[:checked]:border-brand has-[:checked]:bg-brand-50">
-                <input type="radio" name="intake" value={v} required className="sr-only" />
-                <span className="font-semibold">{INTAKE_LABEL[v]}</span>
-              </label>
-            ))}
+          <div>
+            <label className="label">¿Cómo comió?</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['GOOD', 'SOME', 'NONE'] as IntakeLevel[]).map((v) => (
+                <label key={v} className="card cursor-pointer p-3 text-center has-[:checked]:border-brand has-[:checked]:bg-brand-50">
+                  <input type="radio" name="intake" value={v} required className="sr-only" />
+                  <span className="font-semibold">{INTAKE_LABEL[v]}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="label">Líquidos</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['GOOD', 'LOW', 'NONE'] as LiquidLevel[]).map((v) => (
-              <label key={v} className="card cursor-pointer p-3 text-center has-[:checked]:border-brand has-[:checked]:bg-brand-50">
-                <input type="radio" name="liquidIntake" value={v} className="sr-only" />
-                <span className="font-semibold">{LIQUID_LABEL[v]}</span>
-              </label>
-            ))}
+          <div>
+            <label className="label">Líquidos</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['GOOD', 'LOW', 'NONE'] as LiquidLevel[]).map((v) => (
+                <label key={v} className="card cursor-pointer p-3 text-center has-[:checked]:border-brand has-[:checked]:bg-brand-50">
+                  <input type="radio" name="liquidIntake" value={v} className="sr-only" />
+                  <span className="font-semibold">{LIQUID_LABEL[v]}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <p className="label">¿Hubo algo de esto?</p>
-          <div className="space-y-2">
-            {[
-              ['nausea', 'Náuseas'],
-              ['vomiting', 'Vómitos'],
-              ['swallowingDifficulty', 'Dificultad para tragar'],
-              ['refusal', 'Rechazó la comida'],
-            ].map(([name, label]) => (
-              <label key={name} className="card p-3 flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" name={name} className="size-5" />
-                <span>{label}</span>
-              </label>
-            ))}
+          <div>
+            <p className="label">¿Hubo algo de esto?</p>
+            <div className="space-y-2">
+              {[
+                ['nausea', 'Náuseas'],
+                ['vomiting', 'Vómitos'],
+                ['swallowingDifficulty', 'Dificultad para tragar'],
+                ['refusal', 'Rechazó la comida'],
+              ].map(([name, label]) => (
+                <label key={name} className="card p-3 flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" name={name} className="size-5" />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="label">Observación (opcional)</label>
-          <textarea name="notes" rows={2} className="input" />
-        </div>
+          <div>
+            <label className="label">Observación (opcional)</label>
+            <textarea name="notes" rows={2} className="input" />
+          </div>
 
-        <button type="submit" className="btn-primary btn-lg w-full">Guardar</button>
-      </form>
+          <div>
+            <label className="label">Foto de la comida (opcional)</label>
+            <input
+              type="file"
+              name="photo"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              className="input"
+            />
+            <p className="text-xs text-slate-500 mt-1">JPG, PNG, WEBP o HEIC · Máximo 10 MB</p>
+          </div>
+
+          <button type="submit" className="btn-primary btn-lg w-full">Guardar</button>
+        </form>
+      )}
 
       {today.length > 0 && (
         <section>
@@ -153,7 +209,19 @@ export default async function MealPage({ params }: { params: { patientId: string
               <div key={m.id} className="card">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold">{MEAL_LABEL[m.mealType]}</p>
-                  <span className="text-sm text-slate-500">{formatTime(m.date)}</span>
+                  <div className="flex items-center gap-2">
+                    {m.photoUrl && (
+                      <a
+                        href={`/api/meal-photos/${m.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand hover:underline"
+                      >
+                        📷 Ver foto
+                      </a>
+                    )}
+                    <span className="text-sm text-slate-500">{formatTime(m.date)}</span>
+                  </div>
                 </div>
                 <p className="text-sm text-slate-700 mt-1">{INTAKE_LABEL[m.intake]}</p>
                 <FlagsList meal={m} />
