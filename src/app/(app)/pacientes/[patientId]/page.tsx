@@ -9,6 +9,7 @@ import { getDaySchedule, TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { VITAL_STATUS_STYLE } from '@/lib/vitals';
 import { MEDICAL_EVENT_EMOJI, MEDICAL_EVENT_LABEL } from '@/lib/files';
 import { ALERT_SEVERITY_STYLE, alertLinkHref } from '@/lib/alerts/types';
+import { getActiveShiftAt, getNextScheduledShift, SHIFT_STATUS_LABEL, SHIFT_TYPE_LABEL } from '@/lib/shifts';
 
 export default async function PatientDashboard({ params }: { params: { patientId: string } }) {
   const session = await auth();
@@ -22,8 +23,8 @@ export default async function PatientDashboard({ params }: { params: { patientId
 
   const today = startOfToday();
   const end = endOfToday();
-
-  const [meds, lastVital, lastMeal, lastStatus, openAlerts, lastCaregiverLog, lastEvent, filesCount] = await Promise.all([
+  const now = new Date();
+  const [meds, lastVital, lastMeal, lastStatus, openAlerts, lastCaregiverLog, lastEvent, filesCount, activeShift, nextShift] = await Promise.all([
     prisma.medication.findMany({
       where: { patientId: params.patientId },
       include: {
@@ -64,6 +65,8 @@ export default async function PatientDashboard({ params }: { params: { patientId
       orderBy: { date: 'desc' },
     }),
     prisma.medicalFile.count({ where: { patientId: params.patientId } }),
+    getActiveShiftAt(params.patientId, now),
+    getNextScheduledShift(params.patientId, now),
   ]);
 
   const slots = getDaySchedule(meds, today);
@@ -148,6 +151,7 @@ export default async function PatientDashboard({ params }: { params: { patientId
           filesCount={filesCount}
           href={`/pacientes/${patient.id}/historial`}
         />
+        <ShiftCard activeShift={activeShift} nextShift={nextShift} href={`/pacientes/${patient.id}/turnos`} />
       </section>
 
       {/* Acciones de cuidado */}
@@ -183,6 +187,7 @@ export default async function PatientDashboard({ params }: { params: { patientId
             <ActionCard emoji="📎" title="Archivos médicos" href={`/pacientes/${patient.id}/archivos`} />
             <ActionCard emoji="🔍" title="Ver auditoría" href={`/pacientes/${patient.id}/auditoria`} />
             <ActionCard emoji="📡" title="Seguimiento beta" href={`/pacientes/${patient.id}/beta`} />
+            <ActionCard emoji="📅" title="Turnos de cuidado" href={`/pacientes/${patient.id}/turnos`} />
           </div>
         </section>
       )}
@@ -288,6 +293,35 @@ function MedicalHistoryCard({
         </>
       ) : (
         <p className="text-slate-500 mt-2">Sin eventos cargados</p>
+      )}
+    </Link>
+  );
+}
+
+function ShiftCard({
+  activeShift, nextShift, href,
+}: {
+  activeShift: { caregiver: { name: string }; shiftType: string; endPlannedAt: Date } | null;
+  nextShift: { caregiver: { name: string }; shiftType: string; startPlannedAt: Date } | null;
+  href: string;
+}) {
+  return (
+    <Link href={href} className="card hover:border-brand hover:shadow-md transition">
+      <p className="text-sm text-slate-600">Cobertura</p>
+      {activeShift ? (
+        <>
+          <p className="font-semibold mt-2 text-green-700">En curso</p>
+          <p className="text-sm font-medium">{activeShift.caregiver.name}</p>
+          <p className="text-xs text-slate-500">{SHIFT_TYPE_LABEL[activeShift.shiftType]} · hasta {formatTime(activeShift.endPlannedAt)}</p>
+        </>
+      ) : nextShift ? (
+        <>
+          <p className="font-semibold mt-2 text-slate-700">Próximo turno</p>
+          <p className="text-sm font-medium">{nextShift.caregiver.name}</p>
+          <p className="text-xs text-slate-500">{SHIFT_TYPE_LABEL[nextShift.shiftType]} · {formatDateTime(nextShift.startPlannedAt)}</p>
+        </>
+      ) : (
+        <p className="text-slate-500 mt-2">Sin turno asignado</p>
       )}
     </Link>
   );

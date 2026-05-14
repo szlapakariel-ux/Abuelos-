@@ -57,6 +57,11 @@ model User {
   alertsResolved       Alert[]        @relation("AlertResolver")
   alertsIgnored        Alert[]        @relation("AlertIgnorer")
   alertsReopened       Alert[]        @relation("AlertReopener")
+  shiftsAsCaregiver    CaregiverShift[] @relation("ShiftCaregiver")
+  shiftsCreated        CaregiverShift[] @relation("ShiftCreatedBy")
+  shiftsStarted        CaregiverShift[] @relation("ShiftStartedBy")
+  shiftsEnded          CaregiverShift[] @relation("ShiftEndedBy")
+  shiftsCorrected      CaregiverShift[] @relation("ShiftCorrectedBy")
 
   @@index([organizationId])
 }
@@ -125,6 +130,7 @@ model Patient {
   alerts        Alert[]
   invitations   Invitation[]
   emailLogs     EmailLog[]
+  caregiverShifts CaregiverShift[]
 
   @@index([organizationId])
 }
@@ -610,4 +616,62 @@ enum EmailLogStatus {
   SENT
   FAILED
   SKIPPED
+}
+
+// ─────────────────────────────────────────
+// TURNOS DE CUIDADO
+// ─────────────────────────────────────────
+model CaregiverShift {
+  id              String      @id @default(cuid())
+  patientId       String
+  patient         Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  caregiverId     String
+  caregiver       User        @relation("ShiftCaregiver", fields: [caregiverId], references: [id])
+  shiftType       ShiftType
+  startPlannedAt  DateTime
+  endPlannedAt    DateTime
+  status          ShiftStatus @default(SCHEDULED)
+  notes           String?
+
+  // Inicio real
+  startedAt       DateTime?
+  startedById     String?
+  startedBy       User?       @relation("ShiftStartedBy", fields: [startedById], references: [id])
+  startDiffMinutes Int?       // positivo = tarde; negativo = temprano
+
+  // Fin real
+  endedAt         DateTime?
+  endedById       String?
+  endedBy         User?       @relation("ShiftEndedBy", fields: [endedById], references: [id])
+  endDiffMinutes  Int?
+
+  // Corrección (admin only)
+  correctionNote  String?
+  correctedById   String?
+  correctedBy     User?       @relation("ShiftCorrectedBy", fields: [correctedById], references: [id])
+  correctedAt     DateTime?
+
+  createdById     String
+  createdBy       User        @relation("ShiftCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([patientId, startPlannedAt])
+  @@index([caregiverId, startPlannedAt])
+}
+
+enum ShiftType {
+  DAY
+  NIGHT
+  FULL_24H
+  REPLACEMENT
+  CUSTOM
+}
+
+enum ShiftStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  MISSED
+  CANCELLED
 }

@@ -39,6 +39,13 @@ const ACTION_LABEL: Record<string, string> = {
   'invitation.created': 'Invitación enviada',
   'invitation.accepted': 'Invitación aceptada',
   'agency.dashboard.view': 'Vista del panel de agencia',
+  'shift.created': 'Turno creado',
+  'shift.started': 'Turno iniciado',
+  'shift.completed': 'Turno completado',
+  'shift.cancelled': 'Turno cancelado',
+  'shift.missed': 'Turno marcado como ausente',
+  'shift.corrected': 'Turno corregido',
+  'auditLog.view': 'Vista de auditoría',
 };
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -50,6 +57,7 @@ const ENTITY_LABEL: Record<string, string> = {
   MedicalEvent: 'Evento médico',
   MedicalFile: 'Archivo médico',
   Alert: 'Alerta',
+  CaregiverShift: 'Turno de cuidado',
 };
 
 const ACTION_GROUPS: Record<string, string[]> = {
@@ -60,6 +68,7 @@ const ACTION_GROUPS: Record<string, string[]> = {
   history: ['medicalEvent.create', 'medicalEvent.update', 'medicalEvent.delete', 'medicalFile.create', 'medicalFile.update', 'medicalFile.delete', 'medicalFile.view'],
   alerts: ['alert.resolved.manual', 'alert.ignored', 'alert.reopened', 'alert.resolved.auto', 'alert.batch.created'],
   reports: ['dailyReport.sent', 'dailyReport.skipped', 'dailyReport.failed'],
+  shifts: ['shift.created', 'shift.started', 'shift.completed', 'shift.cancelled', 'shift.missed', 'shift.corrected'],
 };
 
 const GROUP_LABEL: Record<string, string> = {
@@ -70,6 +79,7 @@ const GROUP_LABEL: Record<string, string> = {
   history: 'Historial médico',
   alerts: 'Alertas',
   reports: 'Reportes',
+  shifts: 'Turnos de cuidado',
 };
 
 export default async function AuditoriaPage({

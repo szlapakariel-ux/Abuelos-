@@ -83,3 +83,13 @@ export function canManageAlerts(access: { patientRole: PatientRole }): boolean {
 export function canReopenAlerts(access: { patientRole: PatientRole }): boolean {
   return access.patientRole === PatientRole.ADMIN;
 }
+
+/**
+ * Gestionar turnos de cuidado.
+ * - Admin: CRUD completo (crear, cancelar, corregir, marcar missed).
+ * - Caregiver: puede iniciar y finalizar sus propios turnos.
+ * - Family: solo lectura.
+ */
+export function canManageShifts(access: { patientRole: PatientRole }): boolean {
+  return access.patientRole === PatientRole.ADMIN || access.patientRole === PatientRole.CAREGIVER;
+}

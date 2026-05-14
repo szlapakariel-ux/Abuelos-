@@ -44,6 +44,8 @@ import {
   AlertSeverity,
   AlertStatus,
   FileCategory,
+  ShiftType,
+  ShiftStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -76,6 +78,7 @@ async function main() {
 
   // ── limpieza idempotente ──────────────────────────────────────────────────
   await prisma.auditLog.deleteMany();
+  await prisma.caregiverShift.deleteMany();
   await prisma.medicationLog.deleteMany();
   await prisma.medicalFile.deleteMany();
   await prisma.patientFile.deleteMany();
@@ -923,6 +926,50 @@ async function main() {
   console.log(`      💊 Calcio+VitD, Levotiroxina`);
   console.log(`      📋 1 evento médico (densitometría), 1 archivo adjunto (placeholder)`);
   console.log(`      ✅ Sin alertas abiertas`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TURNOS DE CUIDADO (demo)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Turno activo de hoy para Rosa — María cubre 08:00–20:00
+  await prisma.caregiverShift.create({
+    data: {
+      patientId: rosa.id,
+      caregiverId: maria.id,
+      shiftType: ShiftType.DAY,
+      startPlannedAt: todayAt(8, 0),
+      endPlannedAt: todayAt(20, 0),
+      status: ShiftStatus.ACTIVE,
+      notes: 'Turno diurno habitual. Recordar tomar presión a las 10 y a las 16.',
+      startedAt: todayAt(8, 10),
+      startedById: maria.id,
+      startDiffMinutes: 10,
+      createdById: laura.id,
+    },
+  });
+
+  // Turno 24h programado para mañana — Ana cubre Alberto
+  const tomorrow8 = new Date(todayAt(8, 0));
+  tomorrow8.setDate(tomorrow8.getDate() + 1);
+  const dayAfter8 = new Date(tomorrow8);
+  dayAfter8.setDate(dayAfter8.getDate() + 1);
+
+  await prisma.caregiverShift.create({
+    data: {
+      patientId: alberto.id,
+      caregiverId: ana.id,
+      shiftType: ShiftType.FULL_24H,
+      startPlannedAt: tomorrow8,
+      endPlannedAt: dayAfter8,
+      status: ShiftStatus.SCHEDULED,
+      notes: 'Guardia 24 horas. Monitorear presión cada 4 hs dado historial reciente.',
+      createdById: sergio.id,
+    },
+  });
+
+  console.log('\n✅ Turnos de cuidado (demo):');
+  console.log(`   📅 Rosa Martínez: turno diurno activo hoy (María López, 08:00–20:00)`);
+  console.log(`   📅 Alberto Gómez: turno 24h programado mañana (Ana Rodríguez)`);
 
   console.log('\n' + '─'.repeat(60));
   console.log('📋 RESUMEN DE USUARIOS DEMO (contraseña: Demo1234!)');

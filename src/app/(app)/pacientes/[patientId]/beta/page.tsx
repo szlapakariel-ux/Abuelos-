@@ -8,6 +8,7 @@ import { getDaySchedule } from '@/lib/medication-day';
 import { TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { ALERT_SEVERITY_STYLE } from '@/lib/alerts/types';
 import { logAudit } from '@/lib/audit';
+import { SHIFT_TYPE_LABEL, SHIFT_STATUS_LABEL, SHIFT_STATUS_STYLE } from '@/lib/shifts';
 
 const EMAIL_STATUS_STYLE = {
   SENT: { label: 'Enviado', cls: 'bg-green-100 text-green-800' },
@@ -39,7 +40,7 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
   const today = startOfToday();
   const end = endOfToday();
 
-  const [meds, todayVitals, todayMeals, todayStatus, openAlerts, lastEmailLogs, lastMedLogs, caregiverActivity] = await Promise.all([
+  const [meds, todayVitals, todayMeals, todayStatus, openAlerts, lastEmailLogs, lastMedLogs, caregiverActivity, todayShifts] = await Promise.all([
     // Medicación del día
     prisma.medication.findMany({
       where: { patientId: params.patientId },
@@ -98,6 +99,16 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
         recordedBy: { select: { name: true } },
         medication: { select: { name: true, dose: true } },
       },
+    }),
+    // Turnos de hoy
+    prisma.caregiverShift.findMany({
+      where: {
+        patientId: params.patientId,
+        startPlannedAt: { lte: end },
+        endPlannedAt: { gte: today },
+      },
+      orderBy: { startPlannedAt: 'asc' },
+      include: { caregiver: { select: { name: true } } },
     }),
   ]);
 
@@ -254,6 +265,41 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
           </div>
         </section>
       )}
+
+      {/* Cobertura de hoy */}
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-semibold">Cobertura de cuidadoras hoy</h2>
+          <Link href={`/pacientes/${params.patientId}/turnos`} className="text-sm text-brand hover:underline">
+            Ver todos →
+          </Link>
+        </div>
+        {todayShifts.length === 0 ? (
+          <div className="card text-sm text-slate-500">Sin turnos asignados para hoy.</div>
+        ) : (
+          <div className="space-y-2">
+            {todayShifts.map((s) => {
+              const style = SHIFT_STATUS_STYLE[s.status];
+              return (
+                <div key={s.id} className={`card flex items-center gap-3 border ${style.border}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${style.bg} ${style.text}`}>
+                        {SHIFT_STATUS_LABEL[s.status]}
+                      </span>
+                      <span className="text-sm font-medium">{s.caregiver.name}</span>
+                      <span className="text-xs text-slate-400">{SHIFT_TYPE_LABEL[s.shiftType]}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {formatDateTime(s.startPlannedAt)} — {formatDateTime(s.endPlannedAt)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Log de emails */}
       <section>
