@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 import { logAudit } from '@/lib/audit';
 import { getDaySchedule, type MedicationWithRel } from '@/lib/medication-day';
+import { startOfTodayAR, endOfTodayAR, formatDateTime, formatDateAR } from '@/lib/date';
 import { ALERT_TYPE_LABEL } from '@/lib/alerts/types';
 import { MEDICAL_EVENT_LABEL } from '@/lib/files';
 import type { AlertSeverity } from '@prisma/client';
@@ -69,8 +70,8 @@ export async function sendDailyReports(opts: { systemUserId?: string } = {}): Pr
   });
 
   const now = new Date();
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+  const startOfToday = startOfTodayAR();
+  const endOfToday = endOfTodayAR();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   for (const patient of patients) {
@@ -278,7 +279,7 @@ function buildHtml(p: {
         <strong>${p.lastVital.systolic}/${p.lastVital.diastolic}</strong>
         ${p.lastVital.pulse ? ` · pulso ${p.lastVital.pulse}` : ''}
         — <em>${escapeHtml(p.lastVital.status)}</em>
-        <br><span style="color:#64748B">${p.lastVital.recordedAt.toLocaleString('es-AR')}</span>
+        <br><span style="color:#64748B">${formatDateTime(p.lastVital.recordedAt)}</span>
       </p>
     `);
   }
@@ -303,7 +304,7 @@ function buildHtml(p: {
     sections.push(`
       <h3 style="margin:24px 0 8px">Nuevos eventos médicos (últimas 24h)</h3>
       <ul style="padding-left:18px;margin:0">
-        ${p.newEvents.map((ev) => `<li>${escapeHtml(MEDICAL_EVENT_LABEL[ev.type])} — ${ev.date.toLocaleDateString('es-AR')}</li>`).join('')}
+        ${p.newEvents.map((ev) => `<li>${escapeHtml(MEDICAL_EVENT_LABEL[ev.type])} — ${formatDateAR(ev.date)}</li>`).join('')}
       </ul>
     `);
   }
@@ -321,7 +322,7 @@ function buildHtml(p: {
 <html><body style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#0F172A;line-height:1.5;padding:0;margin:0;background:#F8FAFC">
   <div style="max-width:560px;margin:0 auto;padding:24px;background:#FFFFFF">
     <h1 style="font-size:20px;margin:0 0 4px;color:#0F766E">Resumen diario</h1>
-    <p style="margin:0 0 16px;color:#64748B">${escapeHtml(p.patientName)} · ${new Date().toLocaleDateString('es-AR')}</p>
+    <p style="margin:0 0 16px;color:#64748B">${escapeHtml(p.patientName)} · ${formatDateAR(new Date())}</p>
     ${sections.join('\n')}
     <hr style="border:none;border-top:1px solid #E2E8F0;margin:32px 0 16px">
     <p style="margin:0">

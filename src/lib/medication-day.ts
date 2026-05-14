@@ -50,22 +50,16 @@ export function isMedicationActiveOn(med: Medication, date: Date): boolean {
 }
 
 function scheduleToDate(schedule: MedicationSchedule, day: Date): Date {
-  const out = new Date(day);
+  // day = medianoche argentina en UTC (ej. 03:00 UTC = 00:00 AR).
+  // Sumamos horas en ms para que la hora AR quede correcta en servidor UTC.
   if (schedule.timeSlot === 'CUSTOM' && schedule.customTime) {
     const [h, m] = schedule.customTime.split(':').map((n) => parseInt(n, 10));
-    out.setHours(h || 0, m || 0, 0, 0);
-  } else {
-    out.setHours(SLOT_DEFAULT_HOUR[schedule.timeSlot], 0, 0, 0);
+    return new Date(day.getTime() + ((h || 0) * 60 + (m || 0)) * 60 * 1000);
   }
-  return out;
+  return new Date(day.getTime() + SLOT_DEFAULT_HOUR[schedule.timeSlot] * 60 * 60 * 1000);
 }
 
 export function getDaySchedule(meds: MedicationWithRel[], day: Date): DaySlot[] {
-  const start = new Date(day);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(day);
-  end.setHours(23, 59, 59, 999);
-
   const slots: DaySlot[] = [];
   for (const med of meds) {
     if (!isMedicationActiveOn(med, day)) continue;

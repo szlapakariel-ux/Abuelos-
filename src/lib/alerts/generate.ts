@@ -7,6 +7,7 @@
 import { prisma } from '@/lib/prisma';
 import { logAudit } from '@/lib/audit';
 import { getDaySchedule, SLOT_LABEL, type MedicationWithRel } from '@/lib/medication-day';
+import { startOfTodayAR, endOfTodayAR, startOfYesterdayAR, formatDateAR } from '@/lib/date';
 import { ALERT_TYPE_LABEL, severityFor } from './types';
 import type { AlertType, Prisma } from '@prisma/client';
 
@@ -207,11 +208,11 @@ export async function generateAlerts(opts: { systemUserId?: string } = {}): Prom
   };
 
   const now = new Date();
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
-  const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  const startOfToday = startOfTodayAR();
+  const endOfToday = endOfTodayAR();
+  const startOfYesterday = startOfYesterdayAR();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const in7Days = new Date(now); in7Days.setDate(in7Days.getDate() + 7);
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const bump = (t: AlertType) => {
     result.alertsCreated++;
@@ -288,7 +289,7 @@ export async function generateAlerts(opts: { systemUserId?: string } = {}): Prom
         patientId: patient.id,
         type: 'PRESCRIPTION_EXPIRY',
         title: ALERT_TYPE_LABEL.PRESCRIPTION_EXPIRY,
-        message: `La receta de ${m.name} vence el ${m.prescriptionExpiry!.toLocaleDateString('es-AR')}.`,
+        message: `La receta de ${m.name} vence el ${formatDateAR(m.prescriptionExpiry!)}.`,
         sourceType: 'Medication',
         sourceId,
         metadata: { medicationId: m.id, expiry: m.prescriptionExpiry!.toISOString() },
@@ -339,7 +340,7 @@ export async function generateAlerts(opts: { systemUserId?: string } = {}): Prom
         patientId: patient.id,
         type: 'DAILY_LOG_MISSING',
         title: ALERT_TYPE_LABEL.DAILY_LOG_MISSING,
-        message: `No se registró ninguna actividad el ${startOfYesterday.toLocaleDateString('es-AR')}.`,
+        message: `No se registró ninguna actividad el ${formatDateAR(startOfYesterday)}.`,
         sourceType: 'Day',
         sourceId: yesterdayKey,
         metadata: { day: yesterdayKey },
@@ -356,7 +357,7 @@ export async function generateAlerts(opts: { systemUserId?: string } = {}): Prom
         patientId: patient.id,
         type: 'NEW_MEDICAL_EVENT',
         title: ALERT_TYPE_LABEL.NEW_MEDICAL_EVENT,
-        message: `Se cargó un nuevo evento médico (${ev.type}) del ${ev.date.toLocaleDateString('es-AR')}.`,
+        message: `Se cargó un nuevo evento médico (${ev.type}) del ${formatDateAR(ev.date)}.`,
         sourceType: 'MedicalEvent',
         sourceId: ev.id,
         metadata: { eventType: ev.type, date: ev.date.toISOString() },
