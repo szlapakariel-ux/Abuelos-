@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { canEditPatientData, canRegisterDailyCare, getPatientAccess } from '@/lib/permissions';
 import { getDaySchedule, TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { formatTime, startOfToday, endOfToday } from '@/lib/date';
+import { logAudit } from '@/lib/audit';
 import { TakeStatus, TimeSlot } from '@prisma/client';
 
 async function recordTake(formData: FormData) {
@@ -23,7 +24,7 @@ async function recordTake(formData: FormData) {
   const access = await getPatientAccess(session.user.id, patientId);
   if (!access || !canRegisterDailyCare(access.patientRole)) throw new Error('No autorizado');
 
-  await prisma.medicationLog.create({
+  const log = await prisma.medicationLog.create({
     data: {
       medicationId,
       scheduleSlot,
@@ -34,6 +35,14 @@ async function recordTake(formData: FormData) {
       reason,
       recordedById: session.user.id,
     },
+  });
+
+  await logAudit({
+    userId: session.user.id,
+    action: 'medication.logged',
+    entityType: 'MedicationLog',
+    entityId: log.id,
+    metadata: { patientId, medicationId, status, scheduleSlot },
   });
 
   revalidatePath(`/pacientes/${patientId}/medicacion`);

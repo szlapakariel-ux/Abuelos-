@@ -10,6 +10,35 @@ import { ALERT_TYPE_LABEL } from '@/lib/alerts/types';
 import { MEDICAL_EVENT_LABEL } from '@/lib/files';
 import type { AlertSeverity } from '@prisma/client';
 
+async function logEmail(params: {
+  patientId: string;
+  recipientEmail: string;
+  recipientName: string | null;
+  subject: string;
+  status: 'SENT' | 'FAILED' | 'SKIPPED';
+  messageId?: string;
+  error?: string;
+  summary?: string;
+}) {
+  try {
+    await prisma.emailLog.create({
+      data: {
+        patientId: params.patientId,
+        recipientEmail: params.recipientEmail,
+        recipientName: params.recipientName,
+        emailType: 'daily_report',
+        subject: params.subject,
+        status: params.status,
+        messageId: params.messageId ?? null,
+        error: params.error ?? null,
+        summary: params.summary ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('[daily-report] no se pudo registrar EmailLog', err);
+  }
+}
+
 export type ReportResult = {
   patientsScanned: number;
   emailsSent: number;
@@ -112,9 +141,20 @@ export async function sendDailyReports(opts: { systemUserId?: string } = {}): Pr
 
     if (!hasMeaningfulData) {
       result.emailsSkipped++;
+      for (const r of recipients) {
+        if (!r.email) continue;
+        await logEmail({
+          patientId: patient.id,
+          recipientEmail: r.email,
+          recipientName: r.name,
+          subject: `Resumen diario — ${patient.fullName}`,
+          status: 'SKIPPED',
+          summary: 'Sin datos del día para reportar',
+        });
+      }
       await logAudit({
         userId: opts.systemUserId ?? 'system',
-        action: 'dailyReport.skipped',
+        action: 'email.skipped',
         entityType: 'Patient',
         entityId: patient.id,
         metadata: { reason: 'no_data' },
@@ -124,6 +164,7 @@ export async function sendDailyReports(opts: { systemUserId?: string } = {}): Pr
 
     const patientUrl = `${appBaseUrl()}/pacientes/${patient.id}`;
     const subject = `Resumen diario — ${patient.fullName}`;
+    const summary = `Medicación: ${taken} tomadas, ${pending} pendientes, ${issues} observaciones. Alertas abiertas: ${openAlerts.length}.`;
     const html = buildHtml({
       patientName: patient.fullName,
       patientUrl,
@@ -138,24 +179,59 @@ export async function sendDailyReports(opts: { systemUserId?: string } = {}): Pr
 
     for (const r of recipients) {
       if (!r.email) continue;
-      try {
-        await sendEmail({ to: r.email, subject, html });
+      const sendResult = await sendEmail({ to: r.email, subject, html });
+      if (sendResult.ok) {
         result.emailsSent++;
-        await logAudit({
-          userId: opts.systemUserId ?? 'system',
-          action: 'dailyReport.sent',
-          entityType: 'Patient',
-          entityId: patient.id,
-          metadata: { recipientUserId: r.id, recipientEmail: r.email },
+        await logEmail({
+          patientId: patient.id,
+          recipientEmail: r.email,
+          recipientName: r.name,
+          subject,
+          status: 'SENT',
+          messageId: sendResult.messageId,
+          summary,
         });
-      } catch (err) {
-        console.error('[daily-report] error enviando email', err);
         await logAudit({
           userId: opts.systemUserId ?? 'system',
-          action: 'dailyReport.failed',
+          action: 'email.sent',
           entityType: 'Patient',
           entityId: patient.id,
-          metadata: { recipientUserId: r.id, error: String(err) },
+          metadata: { recipientUserId: r.id, recipientEmail: r.email, messageId: sendResult.messageId, emailType: 'daily_report' },
+        });
+      } else if (sendResult.skipped) {
+        result.emailsSkipped++;
+        await logEmail({
+          patientId: patient.id,
+          recipientEmail: r.email,
+          recipientName: r.name,
+          subject,
+          status: 'SKIPPED',
+          summary: 'API key no configurada',
+        });
+        await logAudit({
+          userId: opts.systemUserId ?? 'system',
+          action: 'email.skipped',
+          entityType: 'Patient',
+          entityId: patient.id,
+          metadata: { recipientUserId: r.id, reason: 'no_api_key' },
+        });
+      } else {
+        console.error('[daily-report] error enviando email:', sendResult.error);
+        await logEmail({
+          patientId: patient.id,
+          recipientEmail: r.email,
+          recipientName: r.name,
+          subject,
+          status: 'FAILED',
+          error: sendResult.error,
+          summary,
+        });
+        await logAudit({
+          userId: opts.systemUserId ?? 'system',
+          action: 'email.failed',
+          entityType: 'Patient',
+          entityId: patient.id,
+          metadata: { recipientUserId: r.id, error: sendResult.error, emailType: 'daily_report' },
         });
       }
     }

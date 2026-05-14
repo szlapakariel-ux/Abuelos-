@@ -124,6 +124,7 @@ model Patient {
   medicalFiles  MedicalFile[]
   alerts        Alert[]
   invitations   Invitation[]
+  emailLogs     EmailLog[]
 
   @@index([organizationId])
 }
@@ -582,4 +583,31 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([entityType, entityId])
+}
+
+// ─────────────────────────────────────────
+// LOG DE EMAILS
+// ─────────────────────────────────────────
+model EmailLog {
+  id             String         @id @default(cuid())
+  patientId      String?
+  patient        Patient?       @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  recipientEmail String
+  recipientName  String?
+  emailType      String         // 'daily_report' | 'invitation' | 'alert_notification'
+  subject        String
+  status         EmailLogStatus
+  messageId      String?        // ID del mensaje en Resend
+  error          String?
+  summary        String?        // resumen breve del contenido enviado
+  createdAt      DateTime       @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+  SKIPPED
 }
