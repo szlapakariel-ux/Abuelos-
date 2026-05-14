@@ -17,6 +17,7 @@ import {
   validateFile,
 } from '@/lib/files';
 import { MedicalEventType, type FileCategory } from '@prisma/client';
+import { todayStringAR } from '@/lib/date';
 
 async function createMedicalEvent(formData: FormData) {
   'use server';
@@ -159,7 +160,7 @@ export default async function NewMedicalEventPage({ params }: { params: { patien
   if (!access) notFound();
   if (!canUploadFilesFor(access)) redirect(`/pacientes/${params.patientId}/historial`);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStringAR();
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">

@@ -44,6 +44,15 @@ export function formatDateAR(d: Date | string): string {
   return new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeZone: AR_TZ }).format(date);
 }
 
+/** Devuelve la fecha de hoy en Argentina como "YYYY-MM-DD" (para defaultValue de input[type=date]). */
+export function todayStringAR(): string {
+  const arView = new Date(Date.now() - AR_OFFSET_MS);
+  const y = arView.getUTCFullYear();
+  const m = String(arView.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(arView.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function relativeFromNow(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
   const diffMin = Math.round((Date.now() - date.getTime()) / 60000);
