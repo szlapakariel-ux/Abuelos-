@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getPatientAccess, canEditPatientData } from '@/lib/permissions';
-import { startOfToday, endOfToday, formatDateTime, relativeFromNow } from '@/lib/date';
+import { startOfToday, endOfToday, formatDateTime, formatTime, relativeFromNow, AR_TZ } from '@/lib/date';
 import { getDaySchedule } from '@/lib/medication-day';
 import { TAKE_STATUS_LABEL } from '@/lib/medication-day';
 import { ALERT_SEVERITY_STYLE } from '@/lib/alerts/types';
@@ -132,7 +132,7 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
         </p>
         <h1 className="text-xl font-bold mt-1">Seguimiento beta</h1>
         <p className="text-slate-500 text-sm">
-          {new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          {new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: AR_TZ }).format(new Date())}
         </p>
       </div>
 
@@ -167,7 +167,7 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
               <div key={i} className="card flex items-center gap-3 text-sm">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium">{s.medication.name} {s.medication.dose}</p>
-                  <p className="text-slate-500 text-xs">{s.scheduledAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-slate-500 text-xs">{formatTime(s.scheduledAt)}</p>
                 </div>
                 {s.log ? (
                   <div className="text-right shrink-0">
@@ -369,11 +369,11 @@ export default async function BetaDashboardPage({ params }: { params: { patientI
                       {TAKE_STATUS_LABEL[l.status]}
                     </td>
                     <td className="py-1.5 pr-3 text-slate-500">
-                      {l.scheduledFor.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                      {formatTime(l.scheduledFor)}
                     </td>
                     <td className="py-1.5 pr-3 text-slate-500">
                       {l.actualTime
-                        ? l.actualTime.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+                        ? formatTime(l.actualTime)
                         : '—'}
                     </td>
                     <td className="py-1.5 pr-3 text-slate-600">{l.recordedBy.name}</td>

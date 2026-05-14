@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { GlobalRole } from '@prisma/client';
-import { startOfToday, endOfToday, relativeFromNow, formatDateTime } from '@/lib/date';
+import { startOfToday, endOfToday, relativeFromNow, formatDateTime, formatDateAR } from '@/lib/date';
 import { logAudit } from '@/lib/audit';
 
 export default async function CuidadorasPage() {
@@ -72,7 +72,7 @@ export default async function CuidadorasPage() {
           <Link href="/agencia/dashboard" className="hover:text-brand">← Panel de agencia</Link>
         </p>
         <h1 className="text-xl font-bold mt-1">Cuidadoras ({caregivers.length})</h1>
-        <p className="text-slate-600 text-sm">Vista de actividad · hoy {new Date().toLocaleDateString('es-AR')}</p>
+        <p className="text-slate-600 text-sm">Vista de actividad · hoy {formatDateAR(new Date())}</p>
       </div>
 
       {caregivers.length === 0 ? (

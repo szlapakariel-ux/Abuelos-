@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { GlobalRole } from '@prisma/client';
-import { startOfToday, endOfToday, relativeFromNow } from '@/lib/date';
+import { startOfToday, endOfToday, relativeFromNow, AR_TZ } from '@/lib/date';
 import { getDaySchedule } from '@/lib/medication-day';
 import { ALERT_SEVERITY_STYLE, alertLinkHref } from '@/lib/alerts/types';
 import { logAudit } from '@/lib/audit';
@@ -135,7 +135,7 @@ export default async function AgencyDashboard() {
         <div>
           <h1 className="text-2xl font-bold">Panel de agencia</h1>
           <p className="text-slate-600 text-sm">
-            {new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            {new Intl.DateTimeFormat('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: AR_TZ }).format(new Date())}
           </p>
         </div>
         <Link href="/agencia/cuidadoras" className="btn-secondary text-sm">
