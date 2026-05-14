@@ -31,12 +31,16 @@ export const endOfToday = endOfTodayAR;
 
 export function formatTime(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: AR_TZ }).format(date);
+  return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: AR_TZ }).format(date);
 }
 
 export function formatDateTime(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
-  return new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short', timeZone: AR_TZ }).format(date);
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: AR_TZ,
+  }).format(date);
 }
 
 export function formatDateAR(d: Date | string): string {
